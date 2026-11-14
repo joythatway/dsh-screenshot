@@ -1,4 +1,4 @@
-# 截图 · screenshot-picker
+# 截图 · dsh-screenshot
 
 给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的输入框加一个截图按钮：**框选 / 窗口 / 整屏**，图片直接变成草稿附件，跟着消息发给模型。
 
