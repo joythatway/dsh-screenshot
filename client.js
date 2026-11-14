@@ -1020,6 +1020,8 @@ window.__ModuleLoader__.load({
       const [hoverAnchor, setHoverAnchor] = useState(null)
       const [preview, setPreview] = useState(null)
       const [caps, setCaps] = useState(capabilities)
+      // 记住点击时刻的指针位置：列表可能在指针正下方出现，此时不会触发 mouseenter。
+      const pointerRef = useRef({ x: 0, y: 0 })
       const thumbCache = useRef(new Map())
       const buttonRef = useRef(null)
       const popoverRef = useRef(null)
@@ -1126,6 +1128,23 @@ window.__ModuleLoader__.load({
         thumbCache.current.clear()
       }, [])
 
+      // 列表出现在静止的指针下方时，浏览器不会补发 mouseenter，
+      // 所以渲染完成后主动探测指针下的行，把它当成悬停。
+      useEffect(() => {
+        if (menu === null || menu.view !== 'windows' || menu.loading === true) return
+        if (menu.windows.length === 0) return
+        const { x, y } = pointerRef.current
+        if (!(x > 0 && y > 0)) return
+        const element = document.elementFromPoint(x, y)
+        const row = element instanceof Element ? element.closest('[data-window-id]') : null
+        if (!(row instanceof HTMLElement)) return
+        const id = Number(row.dataset.windowId)
+        if (!Number.isInteger(id)) return
+        const rect = row.getBoundingClientRect()
+        setHoverAnchor({ top: rect.top, height: rect.height })
+        setHoverWindow(id)
+      }, [menu === null ? null : menu.view, menu === null ? null : menu.loading, menu === null ? 0 : menu.windows.length])
+
       useEffect(() => {
         if (menu === null) return undefined
         const onPointerDown = (event) => {
@@ -1167,12 +1186,15 @@ window.__ModuleLoader__.load({
           .finally(() => setBusy(false))
       }
 
-      const toggleMenu = () => {
+      const toggleMenu = (event) => {
         if (busy) return
         if (menu !== null) {
           setHoverWindow(null)
           setMenu(null)
           return
+        }
+        if (event !== undefined && typeof event.clientX === 'number') {
+          pointerRef.current = { x: event.clientX, y: event.clientY }
         }
         const rect = buttonRef.current === null ? null : buttonRef.current.getBoundingClientRect()
         const left = rect === null ? 12 : Math.min(Math.max(8, rect.left - 4), Math.max(8, window.innerWidth - 336))
@@ -1180,7 +1202,10 @@ window.__ModuleLoader__.load({
         setMenu({ view: 'menu', left, bottom, loading: false, windows: [], failed: false })
       }
 
-      const showWindows = () => {
+      const showWindows = (event) => {
+        if (event !== undefined && typeof event.clientX === 'number') {
+          pointerRef.current = { x: event.clientX, y: event.clientY }
+        }
         setHoverWindow(null)
         setMenu((previous) => previous === null
           ? previous
@@ -1226,6 +1251,7 @@ window.__ModuleLoader__.load({
                 key: String(item.id),
                 type: 'button',
                 className: 'sp-shot-pop-row',
+                'data-window-id': String(item.id),
                 title: item.title || item.app,
                 onMouseEnter: (event) => {
                   const rect = event.currentTarget.getBoundingClientRect()
