@@ -1,3 +1,3 @@
 - insert:
-    - id: screenshot-picker
-      name: '@local/screenshot-picker'
+    - id: dsh-screenshot
+      name: 'dsh-screenshot'

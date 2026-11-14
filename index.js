@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { createCaptureBackend } from './capture/index.js'
 import { normalizeCaptureMode, parseWindowId } from './lib/util.js'
 
-export const name = 'screenshot-picker'
+export const name = 'dsh-screenshot'
 export const inject = ['webServer']
 
 const PREFIX = '/api/screenshot-picker'

@@ -9,7 +9,7 @@
 // 取回 PNG、造成 File、塞进当前草稿。
 
 window.__ModuleLoader__.load({
-  id: '@local/screenshot-picker',
+  id: 'dsh-screenshot',
   factory(require) {
     const React = require('react')
     const h = React.createElement

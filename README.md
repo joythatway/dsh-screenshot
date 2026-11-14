@@ -57,8 +57,8 @@ plugin_manager install_bundle /绝对路径/screenshot-picker
 
 ```yaml
 - insert:
-    - id: screenshot-picker
-      name: '@local/screenshot-picker'
+    - id: dsh-screenshot
+      name: 'dsh-screenshot'
 ```
 
 安装后重启 Harness（或重新加载插件）；浏览器端代码在刷新页面后生效。
