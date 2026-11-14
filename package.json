@@ -1,5 +1,5 @@
 {
-  "name": "dsh-screenshot",
+  "name": "@joythatway/dsh-screenshot",
   "version": "0.4.0",
   "description": "Composer toolbar screenshot for DeepSeek Harness: region / window / whole screen, attached straight into the draft. · 输入框工具栏截图：框选、窗口、整屏。",
   "type": "module",

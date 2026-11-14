@@ -58,7 +58,7 @@ plugin_manager install_bundle /绝对路径/dsh-screenshot
 ```yaml
 - insert:
     - id: dsh-screenshot
-      name: 'dsh-screenshot'
+      name: '@joythatway/dsh-screenshot'
 ```
 
 安装后重启 Harness（或重新加载插件）；浏览器端代码在刷新页面后生效。
