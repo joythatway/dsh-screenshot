@@ -56,5 +56,9 @@
   "homepage": "https://github.com/joythatway/dsh-screenshot#readme",
   "bugs": {
     "url": "https://github.com/joythatway/dsh-screenshot/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
