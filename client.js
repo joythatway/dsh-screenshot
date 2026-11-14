@@ -12,6 +12,7 @@ window.__ModuleLoader__.load({
   id: '@joythatway/dsh-screenshot',
   factory(require) {
     const React = require('react')
+    const { createPortal } = require('react-dom')
     const h = React.createElement
     const { useEffect, useRef, useState } = React
 
@@ -204,7 +205,7 @@ window.__ModuleLoader__.load({
       }, [state])
 
       if (state === null) return null
-      return h('div', { className: 'sp-toast', role: 'status' },
+      return createPortal(h('div', { className: 'sp-toast', role: 'status' },
         h('style', { key: 'css' }, TOAST_CSS),
         h('span', { style: { flex: 1 } }, state.text),
         state.action === undefined ? null : h('button', {
@@ -220,7 +221,7 @@ window.__ModuleLoader__.load({
             dismissToast(state.seq)
           },
         }, state.action.label),
-      )
+      ), document.body)
     }
 
     // 草稿里多张图片的预览：点任意一张打开，左右切换。
@@ -280,10 +281,13 @@ window.__ModuleLoader__.load({
       }, [state])
 
       if (state === null || state.urls.length === 0) return null
+      // 用 portal 挂到 body：新版 composer 的祖先带 will-change/backdrop-filter，
+      // 会成为 fixed 定位的包含块，不跳出就会缩在输入框里。
+      const portal = (node) => createPortal(node, document.body)
       const index = Math.min(Math.max(state.index, 0), state.urls.length - 1)
       const current = state.urls[index]
       const total = state.urls.length
-      return h('div', {
+      return portal(h('div', {
         className: 'sp-shot-gallery',
         role: 'dialog',
         'aria-modal': 'true',
@@ -332,14 +336,14 @@ window.__ModuleLoader__.load({
           'aria-label': t('gallery.close', ZH['gallery.close']),
           onClick: () => publishGallery(null),
         }, h('span', { 'aria-hidden': true }, '×')),
-      )
+      ), document.body)
     }
 
     const GALLERY_CSS = `
       .sp-shot-gallery {
         position: fixed;
         inset: 0;
-        z-index: 82;
+        z-index: 901;
         display: grid;
         place-items: center;
         padding: 56px 96px 128px;
@@ -476,7 +480,7 @@ window.__ModuleLoader__.load({
       }, [state])
 
       if (state === null) return null
-      return h('div', {
+      return createPortal(h('div', {
         className: 'sp-shot-review',
         role: 'dialog',
         'aria-modal': 'true',
@@ -506,7 +510,7 @@ window.__ModuleLoader__.load({
             }, t('review.confirm', ZH['review.confirm'])),
           ),
         ),
-      )
+      ), document.body)
     }
 
     function confirmReview() {
@@ -532,7 +536,7 @@ window.__ModuleLoader__.load({
         left: 50%;
         bottom: 108px;
         transform: translateX(-50%);
-        z-index: 60;
+        z-index: 850;
         display: flex;
         align-items: center;
         gap: 10px;
@@ -589,7 +593,7 @@ window.__ModuleLoader__.load({
       /* 与内置菜单同一套材质：MenuSurface 的填充 + 背景模糊 + .5px 描边。 */
       .sp-shot-pop {
         position: fixed;
-        z-index: 70;
+        z-index: 800;
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -705,7 +709,8 @@ window.__ModuleLoader__.load({
       }
       .sp-shot-preview {
         position: fixed;
-        z-index: 71;
+        z-index: 801;
+        pointer-events: none;
         width: 340px;
         padding: 6px;
         display: flex;
@@ -732,7 +737,7 @@ window.__ModuleLoader__.load({
       .sp-shot-review {
         position: fixed;
         inset: 0;
-        z-index: 80;
+        z-index: 900;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1235,7 +1240,8 @@ window.__ModuleLoader__.load({
                 h('span', { key: 'app', className: 'sp-shot-pop-app' }, item.app || t('picker.unknownApp', ZH['picker.unknownApp'])),
               )))
 
-      return h('span', { className: 'sp-shot-group' },
+      return h(React.Fragment, null,
+        h('span', { key: 'group', className: 'sp-shot-group' },
         h('style', { key: 'css' }, BUTTON_CSS),
         h('button', {
           key: 'button',
@@ -1250,7 +1256,8 @@ window.__ModuleLoader__.load({
           disabled: busy || !caps.supported,
           onClick: toggleMenu,
         }, h(CameraIcon, { size: 16 })),
-        menu === null ? null : h('div', {
+        ),
+        menu === null ? null : createPortal(h('div', {
           key: 'popover',
           ref: popoverRef,
           className: 'sp-shot-pop',
@@ -1292,8 +1299,8 @@ window.__ModuleLoader__.load({
                 onClick: () => run('window'),
               }, t('picker.fallback', ZH['picker.fallback'])),
             ],
-        ),
-        menu === null || menu.view !== 'windows' || preview === null ? null : h('div', {
+        ), document.body),
+        menu === null || menu.view !== 'windows' || preview === null ? null : createPortal(h('div', {
           key: 'preview',
           className: 'sp-shot-preview',
           style: {
@@ -1312,7 +1319,7 @@ window.__ModuleLoader__.load({
                 ? t('picker.previewUnavailable', ZH['picker.previewUnavailable'])
                 : t('picker.previewLoading', ZH['picker.previewLoading']))
             : h('img', { key: 'img', src: preview.url, alt: '' }),
-        ),
+        ), document.body),
       )
     }
 
