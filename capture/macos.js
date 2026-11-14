@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bmpIsFlat, classifyCaptureFailure, isOccluded } from '../lib/util.js'
+import { bmpIsFlat, classifyCaptureFailure, isOccluded, isUsableWindow } from '../lib/util.js'
 
 const CAPTURE_BINARIES = ['/usr/sbin/screencapture', '/usr/bin/screencapture']
 const SIPS = '/usr/bin/sips'
@@ -42,7 +42,7 @@ ObjC.import('Foundation');
     var alpha = ObjC.unwrap(w.objectForKey('kCGWindowAlpha'));
     if (alpha === 0) continue;
     var b = ObjC.deepUnwrap(w.objectForKey('kCGWindowBounds')) || {};
-    if (!(b.Width >= 60 && b.Height >= 60)) continue;
+    if (!(b.Width >= 100 && b.Height >= 80)) continue;
     out.push({
       id: ObjC.unwrap(w.objectForKey('kCGWindowNumber')),
       app: String(ObjC.unwrap(w.objectForKey('kCGWindowOwnerName')) || ''),
@@ -189,7 +189,7 @@ export function createMacosBackend() {
     if (listed.ok) {
       const index = listed.windows.findIndex((entry) => entry.id === windowId)
       const target = index === -1 ? undefined : listed.windows[index]
-      if (target !== undefined && !isOccluded(listed.windows, index)) {
+      if (target !== undefined && isUsableWindow(target) && !isOccluded(listed.windows, index)) {
         const rect = `${target.x},${target.y},${target.w},${target.h}`
         const second = await captureToBuffer(['-R', rect, '-x', '-t', 'png'])
         if (second.ok && !(await looksBlank(second.buffer))) return second

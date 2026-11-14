@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isOccluded } from '../lib/util.js'
+import { isOccluded, isUsableWindow } from '../lib/util.js'
 
 const POWERSHELL = 'powershell.exe'
 const THUMB_EDGE = 480
@@ -57,7 +57,7 @@ public class WinEnum {
       RECT r;
       if (!GetWindowRect(h, out r)) return true;
       int w = r.Right - r.Left, hgt = r.Bottom - r.Top;
-      if (w < 60 || hgt < 60) return true;
+      if (w < 100 || hgt < 80) return true;
       uint pid;
       GetWindowThreadProcessId(h, out pid);
       items.Add(new WinInfo { id = (long)h, pid = (int)pid, title = sb.ToString(), x = r.Left, y = r.Top, w = w, h = hgt });
@@ -236,7 +236,7 @@ export function createWindowsBackend() {
     if (!listed.ok) return { ok: false, error: listed.error || 'list_failed' }
     const index = listed.windows.findIndex((entry) => Number(entry.id) === windowId)
     const target = index === -1 ? undefined : listed.windows[index]
-    if (target === undefined) return { ok: false, error: 'hidden' }
+    if (target === undefined || !isUsableWindow(target)) return { ok: false, error: 'hidden' }
     // CopyFromScreen 抓到的是屏幕上真实叠放的内容，被挡住的窗口截出来是别人。
     if (isOccluded(listed.windows, index)) return { ok: false, error: 'hidden' }
     return captureRect(target.x, target.y, target.w, target.h)

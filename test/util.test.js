@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   bmpIsFlat,
   clampLongEdge,
+  isUsableWindow,
   classifyCaptureFailure,
   isOccluded,
   normalizeCaptureMode,
@@ -118,4 +119,25 @@ test('bmpIsFlat 识别纯色空图', () => {
   const broken = Buffer.from(flat)
   broken[0] = 0x00
   assert.equal(bmpIsFlat(broken), false)
+})
+
+
+test('bmpIsFlat 用标准差识别低对比度空图', () => {
+  const rows = []
+  for (let y = 0; y < 8; y += 1) {
+    const row = []
+    for (let x = 0; x < 8; x += 1) row.push([118, 118, 118])
+    rows.push(row)
+  }
+  // 只有一个像素亮一点点：跨度 11（超过纯色阈值），但整体几乎没有内容。
+  rows[0][0] = [129, 129, 129]
+  assert.equal(bmpIsFlat(makeBmp(rows)), true)
+})
+
+test('isUsableWindow 过滤掉小尺寸辅助窗口', () => {
+  assert.equal(isUsableWindow({ w: 64, h: 64 }), false)
+  assert.equal(isUsableWindow({ w: 99, h: 90 }), false)
+  assert.equal(isUsableWindow({ w: 100, h: 80 }), true)
+  assert.equal(isUsableWindow({ w: 480, h: 880 }), true)
+  assert.equal(isUsableWindow(null), false)
 })
