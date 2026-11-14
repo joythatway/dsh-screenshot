@@ -1,0 +1,3 @@
+- insert:
+    - id: screenshot-picker
+      name: '@local/screenshot-picker'

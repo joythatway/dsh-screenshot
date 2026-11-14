@@ -1,0 +1,61 @@
+{
+  "name": "@local/screenshot-picker",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Composer toolbar screenshot for DeepSeek Harness: region / window / whole screen, attached straight into the draft. · 输入框工具栏截图：框选、窗口、整屏。",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "capture/*.js",
+    "lib/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "license": "MIT",
+  "author": "joythatway",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "screenshot",
+    "capture",
+    "macos"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joythatway/screenshot-picker.git"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "homepage": "https://github.com/joythatway/screenshot-picker#readme",
+  "bugs": {
+    "url": "https://github.com/joythatway/screenshot-picker/issues"
+  }
+}
