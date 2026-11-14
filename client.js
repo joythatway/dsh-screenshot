@@ -344,15 +344,21 @@ window.__ModuleLoader__.load({
         position: fixed;
         inset: 0;
         z-index: 901;
-        display: grid;
-        place-items: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         padding: 56px 96px 128px;
         background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, .6));
         backdrop-filter: var(--dsw-mask-blur, blur(6px));
       }
+      /* 用视口单位而不是百分比：grid/flex 的自动轨道里 100% 高度会被当成 auto，
+         竖版长图就会按原始高度溢出、只剩上半截可见。 */
       .sp-shot-gallery-image {
-        max-width: 100%;
-        max-height: 100%;
+        display: block;
+        width: auto;
+        height: auto;
+        max-width: calc(100vw - 192px);
+        max-height: calc(100vh - 200px);
         object-fit: contain;
         border-radius: var(--dsw-radius-md, 8px);
         box-shadow: var(--dsw-elevation-prominent, 0 24px 64px rgba(0, 0, 0, .4));
