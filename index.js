@@ -15,7 +15,7 @@ import { normalizeCaptureMode, parseWindowId } from './lib/util.js'
 export const name = 'dsh-screenshot'
 export const inject = ['webServer']
 
-const PREFIX = '/api/screenshot-picker'
+const PREFIX = '/api/dsh-screenshot'
 const SHOT_TTL_MS = 60_000
 /** 交给模型的截图长边上限：再大也只是多花 token 和上传时间。 */
 const MAX_IMAGE_EDGE = 2560

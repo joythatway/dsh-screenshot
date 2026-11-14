@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
     const { useEffect, useRef, useState } = React
 
     const NS = 'screenshot-picker'
-    const API = '/api/screenshot-picker'
+    const API = '/api/dsh-screenshot'
     // 点完按钮先让工具栏恢复常态，再让系统铺框选遮罩。
     const MENU_SETTLE_MS = 260
 

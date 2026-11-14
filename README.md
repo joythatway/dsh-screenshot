@@ -48,7 +48,7 @@ Windows 没有系统级的框选遮罩，因此不提供「框选截图」，菜
 **方式一：插件管理器安装本地目录**
 
 ```text
-plugin_manager install_bundle /绝对路径/screenshot-picker
+plugin_manager install_bundle /绝对路径/dsh-screenshot
 ```
 
 **方式二：手动放进 profile**
@@ -92,12 +92,12 @@ plugin_manager install_bundle /绝对路径/screenshot-picker
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/screenshot-picker/probe` | 平台能力：`supported` / `platform` / `modes` |
-| GET | `/api/screenshot-picker/windows` | 可见窗口列表（z 序，带坐标和尺寸） |
-| GET | `/api/screenshot-picker/thumbnail?id=<窗口号>` | 480px 窗口缩略图（PNG） |
-| POST | `/api/screenshot-picker/capture` | `{ mode: 'region'\|'window'\|'screen', windowId? }` → `{ ok, id }` |
-| GET | `/api/screenshot-picker/image/<id>` | 取一次即删的 PNG |
-| POST | `/api/screenshot-picker/settings-screen` | `{ pane: 'screen'\|'accessibility' }` 打开对应设置面板 |
+| GET | `/api/dsh-screenshot/probe` | 平台能力：`supported` / `platform` / `modes` |
+| GET | `/api/dsh-screenshot/windows` | 可见窗口列表（z 序，带坐标和尺寸） |
+| GET | `/api/dsh-screenshot/thumbnail?id=<窗口号>` | 480px 窗口缩略图（PNG） |
+| POST | `/api/dsh-screenshot/capture` | `{ mode: 'region'\|'window'\|'screen', windowId? }` → `{ ok, id }` |
+| GET | `/api/dsh-screenshot/image/<id>` | 取一次即删的 PNG |
+| POST | `/api/dsh-screenshot/settings-screen` | `{ pane: 'screen'\|'accessibility' }` 打开对应设置面板 |
 
 ## 项目结构
 
