@@ -13,7 +13,7 @@ import { createCaptureBackend } from './capture/index.js'
 import { normalizeCaptureMode, parseWindowId } from './lib/util.js'
 
 export const name = 'dsh-screenshot'
-export const inject = ['webServer']
+export const inject = ['webServer', 'connection']
 
 const PREFIX = '/api/dsh-screenshot'
 const SHOT_TTL_MS = 60_000
@@ -124,6 +124,18 @@ export function apply(ctx) {
   }
 
   async function handler(req, res) {
+    // 先过 DSH 自己的准入检查：Host/Origin 围栏 + 浏览器登录态。
+    // webServer.register 挂出来的路由不会被框架自动加这层，必须手动问一次。
+    try {
+      const rejection = ctx.connection.requestRejection(req)
+      if (rejection !== undefined) {
+        send(res, rejection, { ok: false, error: rejection === 401 ? 'unauthorized' : 'forbidden' })
+        return
+      }
+    } catch {
+      // 拿不到 connection 服务时退回下面的同源检查。
+    }
+
     // 只接受同源请求：这是本机截图能力，不能让任意网页调。
     const site = req.headers['sec-fetch-site']
     if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') {
