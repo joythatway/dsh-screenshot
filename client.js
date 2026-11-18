@@ -24,6 +24,7 @@ window.__ModuleLoader__.load({
     const ZH = {
       'menu.label': '截图',
       'menu.hint': '截图：框选 / 窗口 / 整屏（快捷键 Control+Shift+S）',
+      'menu.hintKeys': '截图：框选 / 窗口 / 整屏；{keys} 直接整屏截图',
       'menu.region': '框选截图',
       'menu.window': '窗口截图',
       'menu.screen': '整屏截图',
@@ -56,7 +57,7 @@ window.__ModuleLoader__.load({
       'gallery.save': '保存',
       'settings.nav': '截图',
       'settings.shortcut.title': '截图快捷键',
-      'settings.shortcut.description': '按下后打开截图菜单，再选框选 / 窗口 / 整屏',
+      'settings.shortcut.description': '按下直接整屏截图，和菜单里的「整屏截图」等价',
       'settings.shortcut.recording': '请按下新的组合键…',
       'settings.shortcut.cancel': '取消',
       'settings.shortcut.change': '修改',
@@ -91,6 +92,7 @@ window.__ModuleLoader__.load({
     const EN = {
       'menu.label': 'Screenshot',
       'menu.hint': 'Capture: region / window / whole screen (Control+Shift+S)',
+      'menu.hintKeys': 'Capture: region / window / whole screen; {keys} captures the whole screen',
       'menu.region': 'Region',
       'menu.window': 'Window',
       'menu.screen': 'Whole screen',
@@ -123,7 +125,7 @@ window.__ModuleLoader__.load({
       'gallery.save': 'Save',
       'settings.nav': 'Screenshot',
       'settings.shortcut.title': 'Screenshot shortcut',
-      'settings.shortcut.description': 'Opens the screenshot menu: region, window, or whole screen',
+      'settings.shortcut.description': 'Captures the whole screen directly; same as Whole screen in the menu',
       'settings.shortcut.recording': 'Press the new combination…',
       'settings.shortcut.cancel': 'Cancel',
       'settings.shortcut.change': 'Change',
@@ -1672,9 +1674,6 @@ window.__ModuleLoader__.load({
     const shortcutListeners = new Set()
     /** 设置页录制新组合键期间，别让旧快捷键把截图流程点着。 */
     let shortcutRecording = false
-    /** 打开菜单的函数，由工具栏按钮挂载时注入；没有输入框时是 null。 */
-    let openMenu = null
-
     function shortcutsService() {
       return ctxRef === null ? undefined : ctxRef.get('shortcuts')
     }
@@ -1959,8 +1958,6 @@ window.__ModuleLoader__.load({
       const [shortcut, setShortcut] = useState(shortcutInfo)
       // 记住点击时刻的指针位置：列表可能在指针正下方出现，此时不会触发 mouseenter。
       const pointerRef = useRef({ x: 0, y: 0 })
-      // 快捷键打开菜单时把焦点放到第一行，键盘就能直接回车。
-      const pendingFocus = useRef(false)
       const thumbCache = useRef(new Map())
       const buttonRef = useRef(null)
       const popoverRef = useRef(null)
@@ -2153,37 +2150,6 @@ window.__ModuleLoader__.load({
         setMenu({ view: 'menu', left, bottom, loading: false, windows: [], failed: false })
       }
 
-      /** 快捷键入口：打开菜单并把焦点放进第一行；已经打开就收起来。 */
-      const openFromKeyboard = () => {
-        if (busy) return
-        if (menu !== null) {
-          setHoverWindow(null)
-          setMenu(null)
-          return
-        }
-        pendingFocus.current = true
-        const rect = buttonRef.current === null ? null : buttonRef.current.getBoundingClientRect()
-        const left = rect === null ? 12 : Math.min(Math.max(8, rect.left - 4), Math.max(8, window.innerWidth - 336))
-        const bottom = rect === null ? 120 : window.innerHeight - rect.top + 8
-        setMenu({ view: 'menu', left, bottom, loading: false, windows: [], failed: false })
-      }
-
-      // 把打开器交给快捷键命令；组件卸载时收回。
-      useEffect(() => {
-        openMenu = openFromKeyboard
-      })
-      useEffect(() => () => {
-        openMenu = null
-      }, [])
-
-      // 菜单出现后把焦点放到第一行（只对快捷键打开的那次生效）。
-      useEffect(() => {
-        if (menu === null || pendingFocus.current !== true) return
-        pendingFocus.current = false
-        const row = popoverRef.current === null ? null : popoverRef.current.querySelector('[role="menuitem"]')
-        if (row instanceof HTMLElement) row.focus()
-      }, [menu === null ? null : menu.view])
-
       const showWindows = (event) => {
         if (event !== undefined && typeof event.clientX === 'number') {
           pointerRef.current = { x: event.clientX, y: event.clientY }
@@ -2267,7 +2233,7 @@ window.__ModuleLoader__.load({
           'aria-expanded': menu !== null,
           title: shortcutKeysText() === ''
             ? t('menu.hint', ZH['menu.hint'])
-            : `${t('menu.label', ZH['menu.label'])}：${shortcutKeysText()}`,
+            : t('menu.hintKeys', ZH['menu.hintKeys']).replace('{keys}', shortcutKeysText()),
           'aria-label': t('menu.label', ZH['menu.label']),
           disabled: busy || !caps.supported,
           onClick: toggleMenu,
@@ -2300,13 +2266,13 @@ window.__ModuleLoader__.load({
           menu.view === 'menu'
             ? [
               caps.modes.includes('region')
-                ? menuRow('region', h(CameraIcon, { size: 16 }), t('menu.region', ZH['menu.region']), () => run('region'), shortcut.unbound ? undefined : shortcutKeysText(), shortcut.label)
+                ? menuRow('region', h(CameraIcon, { size: 16 }), t('menu.region', ZH['menu.region']), () => run('region'))
                 : null,
               caps.modes.includes('window')
                 ? menuRow('window', h(WindowIcon, { size: 16 }), t('menu.window', ZH['menu.window']), showWindows)
                 : null,
               caps.modes.includes('screen')
-                ? menuRow('screen', h(MonitorIcon, { size: 16 }), t('menu.screen', ZH['menu.screen']), () => run('screen'))
+                ? menuRow('screen', h(MonitorIcon, { size: 16 }), t('menu.screen', ZH['menu.screen']), () => run('screen'), shortcut.unbound ? undefined : shortcutKeysText(), shortcut.label)
                 : null,
             ].filter((row) => row !== null)
             : [
@@ -2464,23 +2430,18 @@ window.__ModuleLoader__.load({
                 },
                 regions: ['page', 'editable', 'terminal'],
                 modals: [],
-                resolve: (context) => {
+                // 按下就是一次整屏截图（和菜单里的「整屏截图」完全等价），
+                // 不经过菜单：快捷键要的是「按了就有图」。
+                resolve: () => {
                   if (shortcutRecording) return { status: 'pass' }
-                  if (!capabilities.supported) return { status: 'pass' }
-                  // 设置面板这种模态打开时不抢它的按键。
-                  if (context !== undefined && context !== null && context.modal !== null && context.modal !== undefined) {
-                    return { status: 'blocked', reason: 'modal' }
-                  }
+                  if (!capabilities.modes.includes('screen')) return { status: 'pass' }
+                  const target = currentSessionId
+                  if (target === undefined || handles.get(target) === undefined) return { status: 'pass' }
                   return {
                     status: 'handled',
                     run: () => {
                       if (closeMenu !== null) closeMenu()
-                      if (openMenu !== null) {
-                        openMenu()
-                        return
-                      }
-                      // 没有输入框（比如停在设置页）时直接框选，截完只存盘。
-                      startCapture(ctxRef, currentSessionId, 'region').catch(() => {
+                      startCapture(ctxRef, target, 'screen').catch(() => {
                         showToast(t('error.capture', ZH['error.capture']))
                       })
                     },
