@@ -53,6 +53,40 @@ window.__ModuleLoader__.load({
       'gallery.prev': '上一张',
       'gallery.next': '下一张',
       'gallery.close': '关闭预览',
+      'gallery.save': '保存',
+      'settings.nav': '截图',
+      'settings.shortcut.title': '截图快捷键',
+      'settings.shortcut.description': '按下后打开截图菜单，再选框选 / 窗口 / 整屏',
+      'settings.shortcut.recording': '请按下新的组合键…',
+      'settings.shortcut.cancel': '取消',
+      'settings.shortcut.change': '修改',
+      'settings.shortcut.reset': '恢复默认',
+      'settings.shortcut.unbound': '未设置',
+      'settings.shortcut.invalid': '这个组合键不受支持',
+      'settings.shortcut.issue.reserved': '这个组合键被系统或 Harness 保留了',
+      'settings.shortcut.issue.unsupported-browser': '浏览器里不能用这个组合键',
+      'settings.shortcut.issue.modifier-required': '至少要带一个修饰键（⌘ / ⌃ / ⌥ / ⇧）',
+      'settings.shortcut.issue.unsupported-key': '这个键不能单独用作快捷键',
+      'settings.shortcut.conflict': '这个组合键已经被「{name}」占用',
+      'settings.shortcut.failed': '保存快捷键失败，请重试',
+      'settings.shortcut.unsupported': '当前环境不支持修改快捷键',
+      'settings.save.title': '保存位置',
+      'settings.save.description': '点「保存」时把 PNG 存到这个文件夹',
+      'settings.save.pick': '选择…',
+      'settings.save.reset': '恢复默认',
+      'settings.save.notAbsolute': '请填绝对路径，例如 /Users/you/Pictures',
+      'settings.save.failed': '保存目录没写进去，请重试',
+      'settings.save.pickFailed': '当前环境打不开文件夹选择器，直接输入路径也可以',
+      'settings.hide.title': '框选时自动隐藏窗口',
+      'settings.hide.description': '框选期间把 Harness 窗口让开，截完自动恢复（需要「辅助功能」权限）',
+      'settings.hide.failed': '设置没写进去，请重试',
+      'settings.footer': '设置立即生效 · 保存在 ~/.dsh/dsh-screenshot/settings.json',
+      'settings.loadFailed': '没能读到设置，改动可能不会保存',
+      'save.done': '已保存到 {path}',
+      'save.reveal': '显示',
+      'save.failed': '保存失败，请检查保存位置是否可写',
+      'review.save': '保存',
+      'review.savedOnly': '没有打开的会话，确认后直接存到磁盘',
     }
     const EN = {
       'menu.label': 'Screenshot',
@@ -86,6 +120,40 @@ window.__ModuleLoader__.load({
       'gallery.prev': 'Previous',
       'gallery.next': 'Next',
       'gallery.close': 'Close preview',
+      'gallery.save': 'Save',
+      'settings.nav': 'Screenshot',
+      'settings.shortcut.title': 'Screenshot shortcut',
+      'settings.shortcut.description': 'Opens the screenshot menu: region, window, or whole screen',
+      'settings.shortcut.recording': 'Press the new combination…',
+      'settings.shortcut.cancel': 'Cancel',
+      'settings.shortcut.change': 'Change',
+      'settings.shortcut.reset': 'Restore default',
+      'settings.shortcut.unbound': 'Not set',
+      'settings.shortcut.invalid': 'That combination is not supported',
+      'settings.shortcut.issue.reserved': 'That combination is reserved by the system or Harness',
+      'settings.shortcut.issue.unsupported-browser': 'That combination is not available in a browser',
+      'settings.shortcut.issue.modifier-required': 'Include at least one modifier (⌘ / ⌃ / ⌥ / ⇧)',
+      'settings.shortcut.issue.unsupported-key': 'That key cannot be a shortcut on its own',
+      'settings.shortcut.conflict': 'That combination is already used by "{name}"',
+      'settings.shortcut.failed': 'Could not save the shortcut. Try again.',
+      'settings.shortcut.unsupported': 'Shortcuts cannot be changed in this environment',
+      'settings.save.title': 'Save location',
+      'settings.save.description': 'The Save button writes PNG files into this folder',
+      'settings.save.pick': 'Choose…',
+      'settings.save.reset': 'Restore default',
+      'settings.save.notAbsolute': 'Use an absolute path, such as /Users/you/Pictures',
+      'settings.save.failed': 'The save location was not written. Try again.',
+      'settings.save.pickFailed': 'The folder picker is unavailable here; type the path instead',
+      'settings.hide.title': 'Hide the window while selecting a region',
+      'settings.hide.description': 'Steps the Harness window aside while you drag, then restores it (needs Accessibility permission)',
+      'settings.hide.failed': 'The setting was not written. Try again.',
+      'settings.footer': 'Applies immediately · stored in ~/.dsh/dsh-screenshot/settings.json',
+      'settings.loadFailed': 'Could not read the settings; changes may not be saved',
+      'save.done': 'Saved to {path}',
+      'save.reveal': 'Show',
+      'save.failed': 'Could not save the file. Check that the folder is writable.',
+      'review.save': 'Save',
+      'review.savedOnly': 'No session is open, so the screenshot goes straight to disk',
     }
 
     let translate = null
@@ -153,8 +221,34 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** 下载箭头 + 托盘，用在保存按钮上。 */
+    function SaveIcon(props) {
+      const size = props && Number.isFinite(props.size) ? props.size : 16
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 16 16', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': true, style: { display: 'block', flex: 'none' },
+      },
+        h('path', { d: 'M8 2.4v7.2' }),
+        h('path', { d: 'M5.2 6.8 8 9.6l2.8-2.8' }),
+        h('path', { d: 'M2.9 11.2v1.1c0 .7.6 1.3 1.3 1.3h7.6c.7 0 1.3-.6 1.3-1.3v-1.1' }),
+      )
+    }
+
     // sessionId -> { inputActions }，由工具栏按钮维护。
     const handles = new Map()
+
+    // 本插件自己放进草稿的附件 id：预览时据此判断要不要接管点击（给保存按钮）。
+    const ownDraftIds = new Set()
+    function rememberOwnDraft(id) {
+      if (typeof id !== 'string') return
+      ownDraftIds.add(id)
+      while (ownDraftIds.size > 200) {
+        const first = ownDraftIds.values().next().value
+        if (first === undefined) break
+        ownDraftIds.delete(first)
+      }
+    }
 
     // 轻提示：截图失败时给出可操作的一句话。
     let toast = null
@@ -251,6 +345,8 @@ window.__ModuleLoader__.load({
 
     function GalleryHost() {
       const [state, setState] = useState(gallery)
+      const [busy, setBusy] = useState(false)
+      const [failed, setFailed] = useState(false)
       useEffect(() => {
         const listener = () => setState(gallery)
         galleryListeners.add(listener)
@@ -287,6 +383,25 @@ window.__ModuleLoader__.load({
       const index = Math.min(Math.max(state.index, 0), state.urls.length - 1)
       const current = state.urls[index]
       const total = state.urls.length
+      // 预览里的保存：拿当前这张的 blob 直接交给 Host 落盘。
+      const saveCurrent = async () => {
+        if (busy) return
+        setBusy(true)
+        setFailed(false)
+        const blob = await fetch(current).then((response) => (response.ok ? response.blob() : null)).catch(() => null)
+        if (blob === null || blob.size === 0) {
+          setBusy(false)
+          setFailed(true)
+          return
+        }
+        const payload = await uploadShot(blob, fileName())
+        setBusy(false)
+        if (payload === null) {
+          setFailed(true)
+          return
+        }
+        announceSaved(payload)
+      }
       return portal(h('div', {
         className: 'sp-shot-gallery',
         role: 'dialog',
@@ -318,15 +433,32 @@ window.__ModuleLoader__.load({
           className: 'sp-shot-gallery-footer',
           onMouseDown: (event) => event.stopPropagation(),
         },
-          h('div', { key: 'counter', className: 'sp-shot-gallery-counter' }, `${index + 1} / ${total}`),
-          h('div', { key: 'strip', className: 'sp-shot-gallery-strip' },
+          h('div', { key: 'bar', className: 'sp-shot-gallery-bar' },
+            h('div', { key: 'info', className: 'sp-shot-gallery-info' },
+              h('span', { key: 'counter', className: 'sp-shot-gallery-counter' }, `${index + 1} / ${total}`),
+              failed
+                ? h('span', { key: 'error', className: 'sp-shot-gallery-error', role: 'alert' }, t('save.failed', ZH['save.failed']))
+                : null,
+            ),
+            h('button', {
+              key: 'save',
+              type: 'button',
+              className: 'sp-shot-gallery-action',
+              disabled: busy,
+              onClick: () => { void saveCurrent() },
+            },
+              h(SaveIcon, { size: 14 }),
+              h('span', { key: 'label' }, busy ? '…' : t('gallery.save', ZH['gallery.save'])),
+            ),
+          ),
+          total > 1 ? h('div', { key: 'strip', className: 'sp-shot-gallery-strip' },
             state.urls.map((url, position) => h('button', {
               key: url,
               type: 'button',
               className: position === index ? 'sp-shot-gallery-thumb current' : 'sp-shot-gallery-thumb',
               'aria-current': position === index,
               onClick: () => publishGallery({ ...state, index: position }),
-            }, h('img', { src: url, alt: '' })))),
+            }, h('img', { src: url, alt: '' })))) : null,
         ),
         h('button', {
           key: 'close',
@@ -404,6 +536,51 @@ window.__ModuleLoader__.load({
         font-size: 12px;
         color: var(--dsw-alias-label-secondary);
       }
+      .sp-shot-gallery-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        width: 100%;
+        min-width: 240px;
+      }
+      .sp-shot-gallery-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .sp-shot-gallery-error {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        color: var(--dsw-alias-state-error-primary);
+      }
+      /* 与灯箱的导航按钮同一套材质，只是做成带文字的胶囊。 */
+      .sp-shot-gallery-action {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 12px;
+        border: .5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2));
+        border-radius: 999px;
+        background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-2));
+        color: var(--dsw-alias-label-primary);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .sp-shot-gallery-action:hover:not(:disabled) {
+        background: var(--dsw-alias-interactive-bg-hover-solid, var(--dsw-alias-bg-layer-2));
+      }
+      .sp-shot-gallery-action:disabled { opacity: .6; cursor: default; }
+      .sp-shot-gallery-action:focus-visible {
+        outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary)));
+        outline-offset: 3px;
+      }
       .sp-shot-gallery-strip {
         display: flex;
         gap: 8px;
@@ -462,6 +639,8 @@ window.__ModuleLoader__.load({
 
     function ReviewHost() {
       const [state, setState] = useState(review)
+      const [busy, setBusy] = useState(false)
+      const [failed, setFailed] = useState(false)
       useEffect(() => {
         const listener = () => setState(review)
         reviewListeners.add(listener)
@@ -470,6 +649,14 @@ window.__ModuleLoader__.load({
           reviewListeners.delete(listener)
         }
       }, [])
+      const save = async () => {
+        if (busy || review === null) return
+        setBusy(true)
+        setFailed(false)
+        const saved = await saveReview()
+        setBusy(false)
+        if (!saved) setFailed(true)
+      }
       useEffect(() => {
         if (state === null) return undefined
         const onKeyDown = (event) => {
@@ -477,15 +664,17 @@ window.__ModuleLoader__.load({
           event.preventDefault()
           event.stopPropagation()
           if (event.key === 'Escape') cancelReview()
+          else if (state.sessionId === undefined) save()
           else confirmReview()
         }
         document.addEventListener('keydown', onKeyDown, true)
         return () => {
           document.removeEventListener('keydown', onKeyDown, true)
         }
-      }, [state])
+      }, [state, busy])
 
       if (state === null) return null
+      const canAttach = state.sessionId !== undefined
       return createPortal(h('div', {
         className: 'sp-shot-review',
         role: 'dialog',
@@ -501,7 +690,12 @@ window.__ModuleLoader__.load({
           h('div', { key: 'body', className: 'sp-shot-review-body' },
             h('img', { className: 'sp-shot-review-image', src: state.url, alt: '' }),
           ),
-          h('div', { className: 'sp-shot-review-actions' },
+          h('div', { key: 'actions', className: 'sp-shot-review-actions' },
+            failed
+              ? h('span', { key: 'error', className: 'sp-shot-review-error', role: 'alert' }, t('save.failed', ZH['save.failed']))
+              : canAttach
+                ? null
+                : h('span', { key: 'hint', className: 'sp-shot-review-hint' }, t('review.savedOnly', ZH['review.savedOnly'])),
             h('button', {
               key: 'cancel',
               type: 'button',
@@ -509,14 +703,38 @@ window.__ModuleLoader__.load({
               onClick: () => cancelReview(),
             }, t('review.cancel', ZH['review.cancel'])),
             h('button', {
+              key: 'save',
+              type: 'button',
+              className: 'sp-shot-review-button',
+              disabled: busy,
+              onClick: () => { void save() },
+            }, busy ? '…' : t('review.save', ZH['review.save'])),
+            canAttach ? h('button', {
               key: 'confirm',
               type: 'button',
               className: 'sp-shot-review-button primary',
               onClick: () => confirmReview(),
-            }, t('review.confirm', ZH['review.confirm'])),
+            }, t('review.confirm', ZH['review.confirm'])) : null,
           ),
         ),
       ), document.body)
+    }
+
+    // 框选确认弹窗里的保存：存盘并关掉弹窗，不进草稿。
+    let reviewSaving = false
+    async function saveReview() {
+      if (review === null || reviewSaving) return false
+      const current = review
+      reviewSaving = true
+      try {
+        const payload = await uploadShot(current.blob, fileName())
+        if (payload === null) return false
+        publishReview(null)
+        announceSaved(payload)
+        return true
+      } finally {
+        reviewSaving = false
+      }
     }
 
     function confirmReview() {
@@ -791,6 +1009,25 @@ window.__ModuleLoader__.load({
         gap: 6px;
         padding: 0 8px 8px;
       }
+      .sp-shot-review-error {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        color: var(--dsw-alias-state-error-primary);
+      }
+      .sp-shot-review-hint {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        color: var(--dsw-alias-label-secondary);
+      }
+      .sp-shot-review-button:disabled { opacity: .55; cursor: default; }
       .sp-shot-review-button {
         box-sizing: border-box;
         display: inline-flex;
@@ -839,6 +1076,521 @@ window.__ModuleLoader__.load({
       .sp-shot-pop-fallback:hover {
         background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-layer-2));
         color: var(--dsw-alias-label-primary);
+      }
+    `
+
+    // ---- 设置页：快捷键 / 保存位置 / 框选时自动隐藏窗口 ----------------------
+
+    /** 一个设置行：左边标题 + 说明，右边控件；和 Harness 设置页的 General 行同构。 */
+    function SettingsRow(props) {
+      return h('div', { className: 'sp-set-row' },
+        h('div', { key: 'text', className: 'sp-set-text' },
+          h('div', { key: 'title', className: 'sp-set-title' }, props.title),
+          props.description === undefined ? null : h('div', { key: 'desc', className: 'sp-set-desc' }, props.description),
+          props.error === undefined || props.error === null
+            ? null
+            : h('div', { key: 'error', className: 'sp-set-error', role: 'alert' }, props.error),
+        ),
+        h('div', { key: 'control', className: 'sp-set-control' }, props.children),
+      )
+    }
+
+    /** 开关：role=switch + aria-checked，和内置 Switch 的语义一致。 */
+    function SettingsSwitch(props) {
+      return h('button', {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': props.checked === true ? 'true' : 'false',
+        'aria-label': props.label,
+        disabled: props.disabled === true,
+        className: props.checked === true ? 'sp-set-switch on' : 'sp-set-switch',
+        onClick: () => {
+          if (props.disabled !== true) props.onChange(props.checked !== true)
+        },
+      }, h('span', { key: 'knob', className: 'sp-set-knob' }))
+    }
+
+    /** 设置 › 截图：三行偏好，改动立刻生效。 */
+    function SettingsSection() {
+      const [settings, setSettings] = useState(settingsState)
+      const [shortcut, setShortcut] = useState(shortcutInfo)
+      const [recording, setRecording] = useState(false)
+      const [draft, setDraft] = useState(null)
+      const [busy, setBusy] = useState(null)
+      const [error, setError] = useState(null)
+      const [shortcutError, setShortcutError] = useState(null)
+
+      useEffect(() => {
+        const listener = () => setSettings(settingsState)
+        settingsListeners.add(listener)
+        listener()
+        return () => {
+          settingsListeners.delete(listener)
+        }
+      }, [])
+      useEffect(() => {
+        const listener = () => setShortcut(shortcutInfo)
+        shortcutListeners.add(listener)
+        listener()
+        return () => {
+          shortcutListeners.delete(listener)
+        }
+      }, [])
+      useEffect(() => {
+        if (settings.status === 'loading') void loadSettings()
+      }, [settings.status])
+
+      function issueText(issue) {
+        const keys = {
+          reserved: 'settings.shortcut.issue.reserved',
+          'unsupported-browser': 'settings.shortcut.issue.unsupported-browser',
+          'modifier-required': 'settings.shortcut.issue.modifier-required',
+          'unsupported-key': 'settings.shortcut.issue.unsupported-key',
+        }
+        const key = keys[issue]
+        return key === undefined
+          ? t('settings.shortcut.invalid', ZH['settings.shortcut.invalid'])
+          : t(key, ZH[key])
+      }
+
+      function conflictText(ids) {
+        const service = shortcutsService()
+        const catalog = service === undefined ? undefined : service.catalog
+        let labels = []
+        if (catalog !== undefined && typeof catalog.getSnapshot === 'function') {
+          try {
+            const entries = catalog.getSnapshot()
+            labels = (Array.isArray(entries) ? entries : [])
+              .filter((entry) => entry !== null && ids.includes(entry.id) && typeof entry.label === 'string')
+              .map((entry) => entry.label)
+          } catch {
+            labels = []
+          }
+        }
+        const name = labels.length > 0 ? labels.join(' / ') : ids.join(' / ')
+        return t('settings.shortcut.conflict', ZH['settings.shortcut.conflict']).replace('{name}', name)
+      }
+
+      function stopRecording() {
+        setRecording(false)
+        shortcutRecording = false
+        const service = shortcutsService()
+        if (service !== undefined && typeof service.recording === 'function') {
+          Promise.resolve(service.recording(false)).catch(() => {})
+        }
+      }
+
+      function startRecording() {
+        const service = shortcutsService()
+        if (service === undefined || typeof service.edit !== 'function') {
+          setShortcutError(t('settings.shortcut.unsupported', ZH['settings.shortcut.unsupported']))
+          return
+        }
+        setShortcutError(null)
+        setRecording(true)
+        shortcutRecording = true
+        if (typeof service.recording === 'function') {
+          Promise.resolve(service.recording(true)).catch(() => {})
+        }
+      }
+
+      async function applyShortcut(binding) {
+        const service = shortcutsService()
+        if (service === undefined) return
+        let described
+        try {
+          described = service.describeBinding(binding)
+        } catch {
+          setShortcutError(t('settings.shortcut.invalid', ZH['settings.shortcut.invalid']))
+          return
+        }
+        if (described.issue !== null && described.issue !== undefined) {
+          setShortcutError(issueText(described.issue))
+          return
+        }
+        if (described.conflicts.length > 0) {
+          setShortcutError(conflictText(described.conflicts))
+          return
+        }
+        const revision = service.config.getSnapshot().revision
+        const result = await service.edit({ type: 'set', id: SHORTCUT_ID, binding }, revision).catch(() => null)
+        if (result !== null && result.status === 'saved') {
+          stopRecording()
+          setShortcutError(null)
+          refreshShortcutInfo()
+          return
+        }
+        const issue = result === null ? null : result.issue
+        const conflicts = result === null || result.conflicts === undefined ? [] : result.conflicts
+        if (issue !== null && issue !== undefined) setShortcutError(issueText(issue))
+        else if (conflicts.length > 0) setShortcutError(conflictText(conflicts))
+        else setShortcutError(t('settings.shortcut.failed', ZH['settings.shortcut.failed']))
+      }
+
+      async function resetShortcut() {
+        const service = shortcutsService()
+        if (service === undefined) return
+        const revision = service.config.getSnapshot().revision
+        const result = await service.edit({ type: 'reset', id: SHORTCUT_ID }, revision).catch(() => null)
+        if (result !== null && result.status === 'saved') {
+          setShortcutError(null)
+          refreshShortcutInfo()
+          return
+        }
+        setShortcutError(t('settings.shortcut.failed', ZH['settings.shortcut.failed']))
+      }
+
+      useEffect(() => {
+        if (!recording) return undefined
+        const onKeyDown = (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          if (event.repeat === true) return
+          if (event.key === 'Escape') {
+            stopRecording()
+            return
+          }
+          const binding = bindingFromEvent(event)
+          if (binding === null) return
+          if (Array.isArray(binding.modifiers) && binding.modifiers.length === 0) {
+            setShortcutError(issueText('modifier-required'))
+            return
+          }
+          void applyShortcut(binding)
+        }
+        document.addEventListener('keydown', onKeyDown, true)
+        return () => {
+          document.removeEventListener('keydown', onKeyDown, true)
+        }
+      }, [recording])
+
+      // 设置面板关掉时如果还在录制，把键盘交还给快捷键层。
+      useEffect(() => () => {
+        if (!shortcutRecording) return
+        shortcutRecording = false
+        const service = shortcutsService()
+        if (service !== undefined && typeof service.recording === 'function') {
+          Promise.resolve(service.recording(false)).catch(() => {})
+        }
+      }, [])
+
+      async function commitSaveDir(value) {
+        const next = typeof value === 'string' ? value.trim() : ''
+        if (next === (settings.saveDir || settings.defaultSaveDir)) {
+          setDraft(null)
+          return
+        }
+        setBusy('saveDir')
+        setError(null)
+        const result = await patchSettings({ saveDir: next })
+        setBusy(null)
+        setDraft(null)
+        if (!result.ok) {
+          setError({
+            scope: 'saveDir',
+            text: result.error === 'not_absolute' || result.error === 'invalid'
+              ? t('settings.save.notAbsolute', ZH['settings.save.notAbsolute'])
+              : t('settings.save.failed', ZH['settings.save.failed']),
+          })
+        }
+      }
+
+      async function pickSaveDir() {
+        const workspace = ctxRef === null ? undefined : ctxRef.get('uiWorkspace')
+        if (workspace === undefined || typeof workspace.pickDirectory !== 'function') {
+          setError({ scope: 'saveDir', text: t('settings.save.pickFailed', ZH['settings.save.pickFailed']) })
+          return
+        }
+        setBusy('saveDir')
+        setError(null)
+        const picked = await workspace.pickDirectory().catch(() => null)
+        if (picked === null || picked === undefined) {
+          setBusy(null)
+          return
+        }
+        const result = await patchSettings({ saveDir: picked })
+        setBusy(null)
+        setDraft(null)
+        if (!result.ok) {
+          setError({ scope: 'saveDir', text: t('settings.save.failed', ZH['settings.save.failed']) })
+        }
+      }
+
+      async function resetSaveDir() {
+        setBusy('saveDir')
+        setError(null)
+        const result = await patchSettings({ saveDir: '' })
+        setBusy(null)
+        setDraft(null)
+        if (!result.ok) {
+          setError({ scope: 'saveDir', text: t('settings.save.failed', ZH['settings.save.failed']) })
+        }
+      }
+
+      async function toggleHide(next) {
+        setBusy('hide')
+        setError(null)
+        const result = await patchSettings({ hideOnCapture: next })
+        setBusy(null)
+        if (!result.ok) {
+          setError({ scope: 'hide', text: t('settings.hide.failed', ZH['settings.hide.failed']) })
+        }
+      }
+
+      const saveDirValue = settings.saveDir || settings.defaultSaveDir
+      const shownPath = draft === null ? saveDirValue : draft
+      const keys = shortcut.unbound
+        ? null
+        : shortcut.keys.map((key, index) => h('kbd', { key: `${key}-${index}`, className: 'sp-set-key' }, key))
+      const shortcutScopeError = shortcutError
+      const saveDirError = error !== null && error.scope === 'saveDir' ? error.text : undefined
+      const hideError = error !== null && error.scope === 'hide' ? error.text : undefined
+
+      return h('div', { className: 'sp-set' },
+        h('style', { key: 'css' }, SETTINGS_CSS),
+        h(SettingsRow, {
+          key: 'shortcut',
+          title: t('settings.shortcut.title', ZH['settings.shortcut.title']),
+          description: t('settings.shortcut.description', ZH['settings.shortcut.description']),
+          error: shortcutScopeError,
+        },
+          recording
+            ? [
+              h('span', { key: 'hint', className: 'sp-set-recording' }, t('settings.shortcut.recording', ZH['settings.shortcut.recording'])),
+              h('button', {
+                key: 'cancel',
+                type: 'button',
+                className: 'sp-set-button',
+                onClick: () => stopRecording(),
+              }, t('settings.shortcut.cancel', ZH['settings.shortcut.cancel'])),
+            ]
+            : [
+              keys === null || keys.length === 0
+                ? h('span', { key: 'unbound', className: 'sp-set-unbound' }, shortcut.ready
+                  ? t('settings.shortcut.unbound', ZH['settings.shortcut.unbound'])
+                  : '…')
+                : h('span', { key: 'keys', className: 'sp-set-keys' }, keys),
+              h('button', {
+                key: 'change',
+                type: 'button',
+                className: 'sp-set-button',
+                onClick: () => startRecording(),
+              }, t('settings.shortcut.change', ZH['settings.shortcut.change'])),
+              shortcut.modified
+                ? h('button', {
+                  key: 'reset',
+                  type: 'button',
+                  className: 'sp-set-button ghost',
+                  onClick: () => { void resetShortcut() },
+                }, t('settings.shortcut.reset', ZH['settings.shortcut.reset']))
+                : null,
+            ],
+        ),
+        h(SettingsRow, {
+          key: 'saveDir',
+          title: t('settings.save.title', ZH['settings.save.title']),
+          description: t('settings.save.description', ZH['settings.save.description']),
+          error: saveDirError,
+        },
+          h('input', {
+            key: 'input',
+            className: 'sp-set-input',
+            value: shownPath,
+            spellCheck: false,
+            disabled: busy === 'saveDir',
+            title: shownPath,
+            'aria-label': t('settings.save.title', ZH['settings.save.title']),
+            onChange: (event) => setDraft(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void commitSaveDir(shownPath)
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                setDraft(null)
+              }
+            },
+            onBlur: () => {
+              if (draft !== null) void commitSaveDir(draft)
+            },
+          }),
+          h('button', {
+            key: 'pick',
+            type: 'button',
+            className: 'sp-set-button',
+            disabled: busy === 'saveDir',
+            onClick: () => { void pickSaveDir() },
+          }, t('settings.save.pick', ZH['settings.save.pick'])),
+          h('button', {
+            key: 'resetDir',
+            type: 'button',
+            className: 'sp-set-button ghost',
+            disabled: busy === 'saveDir' || settings.settings.saveDir === '',
+            onClick: () => { void resetSaveDir() },
+          }, t('settings.save.reset', ZH['settings.save.reset'])),
+        ),
+        h(SettingsRow, {
+          key: 'hide',
+          title: t('settings.hide.title', ZH['settings.hide.title']),
+          description: t('settings.hide.description', ZH['settings.hide.description']),
+          error: hideError,
+        },
+          h(SettingsSwitch, {
+            key: 'switch',
+            checked: settings.settings.hideOnCapture !== false,
+            disabled: busy === 'hide',
+            label: t('settings.hide.title', ZH['settings.hide.title']),
+            onChange: (next) => { void toggleHide(next) },
+          }),
+        ),
+        h('div', { key: 'foot', className: 'sp-set-foot' },
+          settings.status === 'failed'
+            ? t('settings.loadFailed', ZH['settings.loadFailed'])
+            : t('settings.footer', ZH['settings.footer'])),
+      )
+    }
+
+    const SETTINGS_CSS = `
+      .sp-set {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        padding-top: 4px;
+      }
+      .sp-set-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px 24px;
+        padding: 16px 0;
+        border-bottom: .5px solid var(--dsw-alias-border-l2);
+      }
+      .sp-set-text {
+        flex: 1 1 220px;
+        min-width: 0;
+      }
+      .sp-set-title {
+        font-size: 14px;
+        line-height: 20px;
+        color: var(--dsw-alias-label-primary);
+      }
+      .sp-set-desc {
+        margin-top: 4px;
+        font-size: 12px;
+        line-height: 18px;
+        color: var(--dsw-alias-label-secondary);
+      }
+      .sp-set-error {
+        margin-top: 4px;
+        font-size: 12px;
+        line-height: 18px;
+        color: var(--dsw-alias-state-error-primary);
+      }
+      .sp-set-control {
+        display: flex;
+        flex-wrap: wrap;
+        flex: 0 1 auto;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        max-width: 100%;
+        margin-left: auto;
+      }
+      .sp-set-keys {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .sp-set-key {
+        display: inline-grid;
+        place-items: center;
+        box-sizing: border-box;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 5px;
+        border: .5px solid var(--dsw-alias-border-l2);
+        border-radius: 5px;
+        background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-2));
+        color: var(--dsw-alias-label-secondary);
+        font: inherit;
+        font-size: 11px;
+        line-height: 1;
+      }
+      .sp-set-unbound,
+      .sp-set-recording {
+        font-size: 12px;
+        color: var(--dsw-alias-label-secondary);
+      }
+      .sp-set-recording { color: var(--dsw-alias-brand-primary); }
+      .sp-set-button {
+        height: 28px;
+        padding: 0 10px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--dsw-alias-label-primary);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .sp-set-button:hover:not(:disabled) {
+        background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-layer-2));
+      }
+      .sp-set-button.ghost { color: var(--dsw-alias-label-secondary); }
+      .sp-set-button:disabled { opacity: .5; cursor: default; }
+      .sp-set-input {
+        box-sizing: border-box;
+        flex: 1 1 150px;
+        width: 200px;
+        min-width: 120px;
+        max-width: 100%;
+        height: 28px;
+        padding: 0 8px;
+        border: .5px solid var(--dsw-alias-border-l2);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--dsw-alias-label-primary);
+        font: inherit;
+        font-size: 12px;
+      }
+      .sp-set-input:focus-visible,
+      .sp-set-button:focus-visible,
+      .sp-set-switch:focus-visible {
+        outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
+        outline-offset: 1px;
+      }
+      .sp-set-switch {
+        position: relative;
+        flex: none;
+        width: 32px;
+        height: 20px;
+        padding: 0;
+        border: none;
+        border-radius: 999px;
+        background: var(--dsw-alias-state-idle-primary, rgba(128, 128, 128, .45));
+        cursor: pointer;
+        transition: background-color .12s ease;
+      }
+      .sp-set-switch.on { background: var(--dsw-alias-brand-primary); }
+      .sp-set-switch:disabled { opacity: .5; cursor: default; }
+      .sp-set-knob {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+        transition: transform .12s ease;
+      }
+      .sp-set-switch.on .sp-set-knob { transform: translateX(12px); }
+      .sp-set-foot {
+        padding: 14px 0 4px;
+        font-size: 12px;
+        line-height: 18px;
+        color: var(--dsw-alias-label-secondary);
       }
     `
 
@@ -897,6 +1649,97 @@ window.__ModuleLoader__.load({
     // 根 ctx，供按钮里的截图流程取 conversation 服务；apply 时赋值。
     let ctxRef = null
 
+    // ---- 设置与快捷键：Host 持久化，这里只留一份给界面读的缓存 --------------
+
+    /** 快捷键命令 id；改名等于丢掉用户已有的绑定，所以保持不变。 */
+    const SHORTCUT_ID = 'screenshot-picker.capture'
+    const DEFAULT_PLUGIN_SETTINGS = { saveDir: '', hideOnCapture: true }
+    /** status: loading | ready | failed */
+    let settingsState = {
+      status: 'loading',
+      settings: { ...DEFAULT_PLUGIN_SETTINGS },
+      saveDir: '',
+      defaultSaveDir: '',
+    }
+    const settingsListeners = new Set()
+    function publishSettings(patch) {
+      settingsState = { ...settingsState, ...patch }
+      for (const listener of settingsListeners) listener()
+    }
+
+    /** 快捷键的当前绑定；keys 是已经本地化好的键帽。 */
+    let shortcutInfo = { ready: false, keys: [], label: '', modified: false, unbound: true, issue: null, conflicts: [] }
+    const shortcutListeners = new Set()
+    /** 设置页录制新组合键期间，别让旧快捷键把截图流程点着。 */
+    let shortcutRecording = false
+    /** 打开菜单的函数，由工具栏按钮挂载时注入；没有输入框时是 null。 */
+    let openMenu = null
+
+    function shortcutsService() {
+      return ctxRef === null ? undefined : ctxRef.get('shortcuts')
+    }
+
+    /**
+     * 从 shortcuts 服务里读本插件这条命令的生效绑定。
+     * 服务缺席（比如纯浏览器环境没有键盘桥）时返回 ready:false。
+     * @returns {typeof shortcutInfo} 最新绑定。
+     */
+    function readShortcutInfo() {
+      const service = shortcutsService()
+      const catalog = service === undefined ? undefined : service.catalog
+      if (catalog === undefined || catalog === null || typeof catalog.getSnapshot !== 'function') {
+        return { ...shortcutInfo, ready: false }
+      }
+      let entries
+      try {
+        entries = catalog.getSnapshot()
+      } catch {
+        return { ...shortcutInfo, ready: true }
+      }
+      const entry = Array.isArray(entries) ? entries.find((item) => item !== null && item.id === SHORTCUT_ID) : undefined
+      if (entry === undefined) {
+        return { ready: true, keys: [], label: '', modified: false, unbound: true, issue: null, conflicts: [] }
+      }
+      return {
+        ready: true,
+        keys: Array.isArray(entry.keys) ? entry.keys : [],
+        label: typeof entry.label === 'string' ? entry.label : '',
+        modified: entry.modified === true,
+        unbound: entry.binding === null || entry.binding === undefined,
+        issue: entry.issue === undefined ? null : entry.issue,
+        conflicts: Array.isArray(entry.conflicts) ? entry.conflicts : [],
+      }
+    }
+
+    function refreshShortcutInfo() {
+      shortcutInfo = readShortcutInfo()
+      for (const listener of shortcutListeners) listener()
+    }
+
+    /** 菜单与提示里显示的快捷键文本；没绑定时是空串。 */
+    function shortcutKeysText() {
+      if (!shortcutInfo.ready || shortcutInfo.unbound || shortcutInfo.keys.length === 0) return ''
+      return shortcutInfo.keys.join(' ')
+    }
+
+    /** 键盘事件 -> 快捷键绑定；只按下修饰键时返回 null。 */
+    function bindingFromEvent(event) {
+      const modifierCodes = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'CapsLock', 'Fn', 'FnLock']
+      if (typeof event.code !== 'string' || event.code === '' || modifierCodes.includes(event.code)) return null
+      const modifiers = []
+      if (isMacKeyboard()) {
+        if (event.metaKey) modifiers.push('meta')
+        if (event.ctrlKey) modifiers.push('control')
+      } else {
+        if (event.ctrlKey) modifiers.push('control')
+        if (event.metaKey) modifiers.push('meta')
+      }
+      if (event.altKey) modifiers.push('alt')
+      if (event.shiftKey) modifiers.push('shift')
+      if (modifiers.length === 0) return { code: event.code, modifiers: [], invalid: 'modifier-required' }
+      return { code: event.code, modifiers }
+    }
+
     function readJson(response) {
       return response.json().catch(() => null)
     }
@@ -907,6 +1750,83 @@ window.__ModuleLoader__.load({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ pane }),
       }).catch(() => {})
+    }
+
+    /**
+     * 把一张截图交给 Host 落盘。
+     * @param {Blob} blob PNG 数据。
+     * @param {string} name 建议的文件名。
+     * @returns {Promise<{path:string,dir:string,name:string}|null>} 落盘结果，失败为 null。
+     */
+    async function uploadShot(blob, name) {
+      try {
+        const response = await fetch(`${API}/save?name=${encodeURIComponent(name)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'image/png' },
+          body: blob,
+        })
+        const payload = await readJson(response)
+        return payload !== null && payload.ok === true ? payload : null
+      } catch {
+        return null
+      }
+    }
+
+    /** 在 Finder / 资源管理器里定位刚保存的文件。 */
+    function revealSaved(path) {
+      fetch(API + '/reveal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path }),
+      }).catch(() => {})
+    }
+
+    /** 保存成功后的轻提示：带上路径和「显示」入口。 */
+    function announceSaved(payload) {
+      const text = t('save.done', ZH['save.done']).replace('{path}', payload.path)
+      showToast(text, { label: t('save.reveal', ZH['save.reveal']), run: () => revealSaved(payload.path) })
+    }
+
+    /** 读一次 Host 设置。 */
+    async function loadSettings() {
+      const payload = await fetch(API + '/settings').then(readJson).catch(() => null)
+      if (payload === null || payload.ok !== true) {
+        publishSettings({ status: 'failed' })
+        return
+      }
+      publishSettings({
+        status: 'ready',
+        settings: {
+          saveDir: typeof payload.settings?.saveDir === 'string' ? payload.settings.saveDir : '',
+          hideOnCapture: payload.settings?.hideOnCapture !== false,
+        },
+        saveDir: typeof payload.saveDir === 'string' ? payload.saveDir : '',
+        defaultSaveDir: typeof payload.defaultSaveDir === 'string' ? payload.defaultSaveDir : '',
+      })
+    }
+
+    /**
+     * 改设置并等 Host 确认。
+     * @param {{saveDir?:string, hideOnCapture?:boolean}} patch 要改的字段。
+     * @returns {Promise<{ok:boolean, error?:string}>} Host 的应答。
+     */
+    async function patchSettings(patch) {
+      const payload = await fetch(API + '/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).then(readJson).catch(() => null)
+      if (payload === null) return { ok: false, error: 'network' }
+      if (payload.ok !== true) return { ok: false, error: typeof payload.error === 'string' ? payload.error : 'failed' }
+      publishSettings({
+        status: 'ready',
+        settings: {
+          saveDir: typeof payload.settings?.saveDir === 'string' ? payload.settings.saveDir : settingsState.settings.saveDir,
+          hideOnCapture: payload.settings?.hideOnCapture !== false,
+        },
+        saveDir: typeof payload.saveDir === 'string' ? payload.saveDir : settingsState.saveDir,
+      })
+      return { ok: true }
     }
 
     function fail(code) {
@@ -948,7 +1868,9 @@ window.__ModuleLoader__.load({
         showToast(t('error.image', ZH['error.image']))
         return
       }
-      const added = handle.inputActions.addAttachments(drafts.map((draft) => draft.id))
+      const ids = drafts.map((draft) => draft.id)
+      for (const id of ids) rememberOwnDraft(id)
+      const added = handle.inputActions.addAttachments(ids)
       if (added === false) {
         try {
           conversation.releaseDraftAttachments(drafts)
@@ -959,19 +1881,33 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * 跑一次截图。
+     * @param {object} ctx 客户端根 ctx。
+     * @param {string|undefined} sessionId 目标会话；框选模式允许没有会话（只存盘）。
+     * @param {'region'|'window'|'screen'} mode 截图方式。
+     * @param {number} [windowId] 窗口号。
+     */
     async function startCapture(ctx, sessionId, mode, windowId) {
-      if (sessionId === undefined || inFlight) return
-      if (handles.get(sessionId) === undefined) {
+      if (inFlight) return
+      const attachable = sessionId !== undefined && handles.get(sessionId) !== undefined
+      // 窗口 / 整屏只有一条路：直接进草稿。没有输入框就没必要截。
+      if (!attachable && mode !== 'region') {
         showToast(t('error.composer', ZH['error.composer']))
         return
       }
       inFlight = true
       try {
         await wait(MENU_SETTLE_MS)
+        const body = {
+          mode,
+          ...(windowId === undefined ? {} : { windowId }),
+          hideShell: settingsState.settings.hideOnCapture !== false,
+        }
         const response = await fetch(API + '/capture', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(windowId === undefined ? { mode } : { mode, windowId }),
+          body: JSON.stringify(body),
         }).catch(() => null)
         if (response === null) {
           showToast(t('error.network', ZH['error.network']))
@@ -1000,7 +1936,7 @@ window.__ModuleLoader__.load({
           return
         }
         if (mode === 'region') {
-          publishReview({ url: URL.createObjectURL(blob), blob, sessionId })
+          publishReview({ url: URL.createObjectURL(blob), blob, sessionId: attachable ? sessionId : undefined })
           return
         }
         const file = new File([blob], fileName(), { type: 'image/png' })
@@ -1020,8 +1956,11 @@ window.__ModuleLoader__.load({
       const [hoverAnchor, setHoverAnchor] = useState(null)
       const [preview, setPreview] = useState(null)
       const [caps, setCaps] = useState(capabilities)
+      const [shortcut, setShortcut] = useState(shortcutInfo)
       // 记住点击时刻的指针位置：列表可能在指针正下方出现，此时不会触发 mouseenter。
       const pointerRef = useRef({ x: 0, y: 0 })
+      // 快捷键打开菜单时把焦点放到第一行，键盘就能直接回车。
+      const pendingFocus = useRef(false)
       const thumbCache = useRef(new Map())
       const buttonRef = useRef(null)
       const popoverRef = useRef(null)
@@ -1038,7 +1977,17 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
-      // 草稿里有多张图片时，点缩略图打开带左右切换的画廊；单张图仍交给内置 ImageLightbox。
+      useEffect(() => {
+        const listener = () => setShortcut(shortcutInfo)
+        shortcutListeners.add(listener)
+        listener()
+        return () => {
+          shortcutListeners.delete(listener)
+        }
+      }, [])
+
+      // 草稿里有多张图片时，点缩略图打开带左右切换的画廊；
+      // 单张图只有「本插件截的」才接管（内置 ImageLightbox 没有保存按钮）。
       useEffect(() => {
         const onClick = (event) => {
           const target = event.target
@@ -1049,8 +1998,10 @@ window.__ModuleLoader__.load({
               ? target.querySelector('img')
               : null
           if (image === null) return
-          const urls = draftImageUrls(attachmentIdsRef.current)
-          if (urls.length < 2) return
+          const ids = Array.isArray(attachmentIdsRef.current) ? attachmentIdsRef.current : []
+          const urls = draftImageUrls(ids)
+          const ours = ids.some((id) => ownDraftIds.has(id))
+          if (urls.length < 2 && !(urls.length === 1 && ours)) return
           const index = urls.indexOf(image.src)
           if (index === -1) return
           event.preventDefault()
@@ -1202,6 +2153,37 @@ window.__ModuleLoader__.load({
         setMenu({ view: 'menu', left, bottom, loading: false, windows: [], failed: false })
       }
 
+      /** 快捷键入口：打开菜单并把焦点放进第一行；已经打开就收起来。 */
+      const openFromKeyboard = () => {
+        if (busy) return
+        if (menu !== null) {
+          setHoverWindow(null)
+          setMenu(null)
+          return
+        }
+        pendingFocus.current = true
+        const rect = buttonRef.current === null ? null : buttonRef.current.getBoundingClientRect()
+        const left = rect === null ? 12 : Math.min(Math.max(8, rect.left - 4), Math.max(8, window.innerWidth - 336))
+        const bottom = rect === null ? 120 : window.innerHeight - rect.top + 8
+        setMenu({ view: 'menu', left, bottom, loading: false, windows: [], failed: false })
+      }
+
+      // 把打开器交给快捷键命令；组件卸载时收回。
+      useEffect(() => {
+        openMenu = openFromKeyboard
+      })
+      useEffect(() => () => {
+        openMenu = null
+      }, [])
+
+      // 菜单出现后把焦点放到第一行（只对快捷键打开的那次生效）。
+      useEffect(() => {
+        if (menu === null || pendingFocus.current !== true) return
+        pendingFocus.current = false
+        const row = popoverRef.current === null ? null : popoverRef.current.querySelector('[role="menuitem"]')
+        if (row instanceof HTMLElement) row.focus()
+      }, [menu === null ? null : menu.view])
+
       const showWindows = (event) => {
         if (event !== undefined && typeof event.clientX === 'number') {
           pointerRef.current = { x: event.clientX, y: event.clientY }
@@ -1283,7 +2265,9 @@ window.__ModuleLoader__.load({
           'data-busy': busy,
           'aria-haspopup': 'menu',
           'aria-expanded': menu !== null,
-          title: t('menu.hint', ZH['menu.hint']),
+          title: shortcutKeysText() === ''
+            ? t('menu.hint', ZH['menu.hint'])
+            : `${t('menu.label', ZH['menu.label'])}：${shortcutKeysText()}`,
           'aria-label': t('menu.label', ZH['menu.label']),
           disabled: busy || !caps.supported,
           onClick: toggleMenu,
@@ -1295,17 +2279,34 @@ window.__ModuleLoader__.load({
           className: 'sp-shot-pop',
           role: 'menu',
           style: { left: menu.left, bottom: menu.bottom, width: menu.view === 'windows' ? 320 : 152 },
+          // 键盘走到菜单里：上下键换行，回车触发、Esc 关闭由行内按钮和菜单监听负责。
+          onKeyDown: (event) => {
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
+            const rows = popoverRef.current === null
+              ? []
+              : Array.from(popoverRef.current.querySelectorAll('[role="menuitem"], .sp-shot-pop-row'))
+            if (rows.length === 0) return
+            event.preventDefault()
+            const at = rows.indexOf(document.activeElement)
+            const next = event.key === 'ArrowDown'
+              ? (at < 0 ? 0 : (at + 1) % rows.length)
+              : event.key === 'ArrowUp'
+                ? (at < 0 ? rows.length - 1 : (at - 1 + rows.length) % rows.length)
+                : event.key === 'Home' ? 0 : rows.length - 1
+            const target = rows[next]
+            if (target instanceof HTMLElement) target.focus()
+          },
         },
           menu.view === 'menu'
             ? [
               caps.modes.includes('region')
-                ? menuRow('region', h(CameraIcon, { size: 16 }), t('menu.region', ZH['menu.region']), () => run('region'))
+                ? menuRow('region', h(CameraIcon, { size: 16 }), t('menu.region', ZH['menu.region']), () => run('region'), shortcut.unbound ? undefined : shortcutKeysText(), shortcut.label)
                 : null,
               caps.modes.includes('window')
                 ? menuRow('window', h(WindowIcon, { size: 16 }), t('menu.window', ZH['menu.window']), showWindows)
                 : null,
               caps.modes.includes('screen')
-                ? menuRow('screen', h(MonitorIcon, { size: 16 }), t('menu.screen', ZH['menu.screen']), () => run('screen'), isMacKeyboard() ? '⌃⇧S' : 'Ctrl+Shift+S', isMacKeyboard() ? 'Control + Shift + S' : 'Ctrl + Shift + S')
+                ? menuRow('screen', h(MonitorIcon, { size: 16 }), t('menu.screen', ZH['menu.screen']), () => run('screen'))
                 : null,
             ].filter((row) => row !== null)
             : [
@@ -1382,11 +2383,39 @@ window.__ModuleLoader__.load({
           })
           .catch(() => {})
 
+        // 界面先拿到当前设置；菜单发送截图时会带上 hideShell。
+        void loadSettings()
+
         ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
           name: 'conversation.input.left',
           id: 'screenshot-picker-button',
           order: 0,
         }, ScreenshotControls))
+
+        // 设置 › 截图：一页三个偏好，导航里带相机图标。
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'screenshot',
+          order: 40,
+          label: () => t('settings.nav', ZH['settings.nav']),
+          locale: NS,
+        }, SettingsSection))
+
+        ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+          name: 'settings.section.icon',
+          id: 'screenshot',
+        }, function ScreenshotSectionIcon(props) {
+          return h(CameraIcon, { size: props && Number.isFinite(props.size) ? props.size : 16 })
+        }))
+
+        // 插件管理里的这一行也挂同一个页面（没有描述文本时，摘要留空）。
+        ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+          name: 'plugins.row.config',
+          key: '@joythatway/dsh-screenshot#dsh-screenshot',
+        }, function ScreenshotPluginConfig(props) {
+          if (props && props.view === 'summary') return null
+          return h(SettingsSection, {})
+        }))
 
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({
           name: 'shell.overlay',
@@ -1406,17 +2435,26 @@ window.__ModuleLoader__.load({
           order: 902,
         }, GalleryHost))
 
-        // 整屏截图快捷键：⌘⇧S（Windows/Linux 上是 Ctrl+Shift+S）。
-        // 走可编辑命令注册，桌面端由原生键盘桥在任何输入区里都能触发。
+        // 截图快捷键，默认 Control+Shift+S（Windows/Linux 相同）。
+        // 走可编辑命令注册：桌面端由原生键盘桥在任何输入区里都能触发，
+        // 绑定存在 DSH 自己的 keybindings 里，设置页通过 shortcuts.edit 改。
         ctx.inject(['shortcuts'], (scope) => {
           const shortcuts = scope.shortcuts
           if (shortcuts === undefined || typeof shortcuts.register !== 'function') return
+          const catalog = shortcuts.catalog
+          if (catalog !== undefined && typeof catalog.subscribe === 'function') {
+            scope.effect(() => {
+              const off = catalog.subscribe(() => refreshShortcutInfo())
+              refreshShortcutInfo()
+              return () => { off() }
+            }, 'screenshot-picker: shortcut catalog')
+          }
           scope.effect(() => {
             try {
               return shortcuts.register({
-                id: 'screenshot-picker.screen',
-                label: () => t('menu.screen', ZH['menu.screen']),
-                aliases: ['screenshot', 'capture screen'],
+                id: SHORTCUT_ID,
+                label: () => t('menu.label', ZH['menu.label']),
+                aliases: ['screenshot', 'capture', 'snip'],
                 // 只认桌面壳：Control+Shift+S 在 Web 端不属于允许的浏览器组合，
                 // 一并声明会让整次注册失败，所以纯浏览器打开时这条快捷键不绑定。
                 defaults: {
@@ -1426,15 +2464,23 @@ window.__ModuleLoader__.load({
                 },
                 regions: ['page', 'editable', 'terminal'],
                 modals: [],
-                resolve: () => {
-                  const target = currentSessionId
-                  if (!capabilities.modes.includes('screen')) return { status: 'pass' }
-                  if (target === undefined || handles.get(target) === undefined) return { status: 'pass' }
+                resolve: (context) => {
+                  if (shortcutRecording) return { status: 'pass' }
+                  if (!capabilities.supported) return { status: 'pass' }
+                  // 设置面板这种模态打开时不抢它的按键。
+                  if (context !== undefined && context !== null && context.modal !== null && context.modal !== undefined) {
+                    return { status: 'blocked', reason: 'modal' }
+                  }
                   return {
                     status: 'handled',
                     run: () => {
                       if (closeMenu !== null) closeMenu()
-                      startCapture(ctxRef, target, 'screen').catch(() => {
+                      if (openMenu !== null) {
+                        openMenu()
+                        return
+                      }
+                      // 没有输入框（比如停在设置页）时直接框选，截完只存盘。
+                      startCapture(ctxRef, currentSessionId, 'region').catch(() => {
                         showToast(t('error.capture', ZH['error.capture']))
                       })
                     },
@@ -1445,7 +2491,7 @@ window.__ModuleLoader__.load({
               // 组合被占用时静默放弃，不影响截图按钮本身。
               return () => {}
             }
-          }, 'screenshot-picker: screen shortcut')
+          }, 'screenshot-picker: capture shortcut')
         })
       },
     }

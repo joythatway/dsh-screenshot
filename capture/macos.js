@@ -370,7 +370,7 @@ export function createMacosBackend() {
     /**
      * 按模式截图。
      * @param {'region'|'window'|'screen'} mode
-     * @param {{windowId?:number}} options
+     * @param {{windowId?:number, hideShell?:boolean}} options hideShell=false 表示不让开宿主窗口。
      * @returns {Promise<{ok:true,buffer:Buffer}|{ok:false,error:string,detail?:string}>}
      */
     async capture(mode, options = {}) {
@@ -383,7 +383,10 @@ export function createMacosBackend() {
         return result.ok ? result : { ok: false, error: 'capture_failed' }
       }
       // 交互式截图（框选 / 系统窗口点选）时先把宿主窗口让开，截图结束再放回来。
-      const hiding = await hideShellWindow()
+      // 设置里关掉「自动隐藏」就完全不动宿主窗口。
+      const hiding = options.hideShell === false
+        ? { hidden: false, reason: 'disabled' }
+        : await hideShellWindow()
       try {
         const result = await runInteractive(mode === 'window' ? 'window' : 'region')
         if (hiding.hidden) return result

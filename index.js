@@ -4,12 +4,22 @@
 //   1. 把页面的截图请求转给当前平台的采集后端（见 capture/）
 //   2. 截图先缩放再暂存在内存里，给页面一个同源下载地址
 //   3. 页面拿到 PNG 后塞进当前草稿，随消息发给模型
+//   4. 保存按钮把 PNG 落到用户设置的目录（默认桌面）
+//   5. 读写插件设置：保存目录、框选时是否让开宿主窗口
 //
 // 为什么在 Host 做：浏览器侧的 getDisplayMedia 在这个壳里被权限处理器直接拒绝，
-// 只有宿主机进程才能调用系统截图。
+// 只有宿主机进程才能调用系统截图，也只有它能写文件。
 
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { access, mkdir, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { createCaptureBackend } from './capture/index.js'
+import {
+  DEFAULT_SETTINGS, isPng, normalizeSettings, readSettings,
+  resolveSaveDir, safeFileName, settingsPath, validateSaveDir, writeSettings,
+} from './lib/settings.js'
 import { normalizeCaptureMode, parseWindowId } from './lib/util.js'
 
 export const name = 'dsh-screenshot'
@@ -20,6 +30,10 @@ const SHOT_TTL_MS = 60_000
 /** 交给模型的截图长边上限：再大也只是多花 token 和上传时间。 */
 const MAX_IMAGE_EDGE = 2560
 const MAX_BODY_BYTES = 4096
+/** 保存请求的上限：图片最大也就几十 MB，超过就直接拒绝，别把内存吃光。 */
+const MAX_SAVE_BYTES = 64 * 1024 * 1024
+/** 记住最近写过的文件，/reveal 只对它们生效。 */
+const WRITTEN_LIMIT = 200
 
 function send(res, status, payload) {
   const body = JSON.stringify(payload)
@@ -54,6 +68,73 @@ async function readBody(req) {
 }
 
 /**
+ * 把整个请求体读进内存，用于保存 PNG。
+ * @param {import('node:http').IncomingMessage} req
+ * @param {number} limit 字节上限。
+ * @returns {Promise<Buffer>} 请求体。
+ */
+async function readBinary(req, limit) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > limit) throw new Error('body_too_large')
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks)
+}
+
+/**
+ * 找一个没被占用的文件名：同名时加 -2、-3。
+ * @param {string} dir 目标目录。
+ * @param {string} name 期望的文件名。
+ * @returns {Promise<string>} 可用的文件名。
+ */
+async function uniqueName(dir, name) {
+  const extension = /\.png$/iu.test(name) ? name.slice(-4) : ''
+  const stem = extension === '' ? name : name.slice(0, -4)
+  for (let index = 1; index <= 999; index += 1) {
+    const candidate = index === 1 ? `${stem}${extension}` : `${stem}-${index}${extension}`
+    try {
+      await access(join(dir, candidate))
+    } catch {
+      return candidate
+    }
+  }
+  return `${stem}-${Date.now()}${extension}`
+}
+
+/**
+ * 在「最近写过」集合里记住一个路径；集合满时丢掉最早的。
+ * @param {Set<string>} written 集合。
+ * @param {string} path 文件的绝对路径。
+ */
+function rememberWritten(written, path) {
+  written.add(path)
+  while (written.size > WRITTEN_LIMIT) {
+    const first = written.values().next().value
+    if (first === undefined) break
+    written.delete(first)
+  }
+}
+
+/**
+ * 在系统文件管理器里定位一个文件。
+ * @param {string} path 文件的绝对路径。
+ */
+function revealInFileManager(path) {
+  // 测试里不要真的弹出 Finder 窗口。
+  if (process.env.NODE_TEST_CONTEXT !== undefined) return
+  const child = process.platform === 'darwin'
+    ? spawn('/usr/bin/open', ['-R', path], { detached: true, stdio: 'ignore' })
+    : process.platform === 'win32'
+      ? spawn('explorer.exe', [`/select,${path}`], { detached: true, stdio: 'ignore' })
+      : spawn('/usr/bin/xdg-open', [dirname(path)], { detached: true, stdio: 'ignore' })
+  child.on('error', () => {})
+  child.unref()
+}
+
+/**
  * 注册截图插件的 Host 半边。
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
@@ -63,6 +144,15 @@ export function apply(ctx) {
   const shots = new Map()
   /** 同一时刻只允许一个交互式截图，避免两个遮罩打架。 */
   let capturing = false
+  /** 最近由本插件写出的文件；/reveal 只承认它们。 */
+  const written = new Set()
+  /** 设置文件路径与当前值；读盘完成前先用默认值应答。 */
+  const file = settingsPath()
+  let settings = { ...DEFAULT_SETTINGS }
+  const settingsReady = readSettings(file).then((loaded) => {
+    settings = loaded
+    return loaded
+  })
 
   function retainShot(buffer) {
     const id = randomUUID()
@@ -97,6 +187,8 @@ export function apply(ctx) {
       return
     }
     const windowId = parseWindowId(body.windowId)
+    // 框选时是否让开宿主窗口：默认让开，设置页可以关掉。
+    const hideShell = body.hideShell !== false
     capturing = true
     try {
       const granted = await backend.preflightPermission()
@@ -104,7 +196,7 @@ export function apply(ctx) {
         send(res, 200, { ok: false, error: 'permission', detail: 'screen recording permission is not granted' })
         return
       }
-      const result = await backend.capture(mode, { windowId })
+      const result = await backend.capture(mode, { windowId, hideShell })
       if (!result.ok) {
         send(res, 200, { ok: false, error: result.error, detail: result.detail || '' })
         return
@@ -121,6 +213,65 @@ export function apply(ctx) {
     } finally {
       capturing = false
     }
+  }
+
+  /** 返回当前设置，以及页面里要显示的两个目录。 */
+  async function readSettingsPayload() {
+    await settingsReady
+    return {
+      ok: true,
+      settings,
+      saveDir: resolveSaveDir(settings),
+      defaultSaveDir: join(homedir(), 'Desktop'),
+      platform: process.platform,
+    }
+  }
+
+  /** 写设置：只认识 saveDir / hideOnCapture 两个字段。 */
+  async function updateSettings(res, body) {
+    await settingsReady
+    const next = { ...settings }
+    if (Object.hasOwn(body, 'saveDir')) {
+      const checked = validateSaveDir(body.saveDir)
+      if (!checked.ok) {
+        send(res, 400, { ok: false, error: checked.reason })
+        return
+      }
+      next.saveDir = checked.value
+    }
+    if (Object.hasOwn(body, 'hideOnCapture')) {
+      if (typeof body.hideOnCapture !== 'boolean') {
+        send(res, 400, { ok: false, error: 'invalid' })
+        return
+      }
+      next.hideOnCapture = body.hideOnCapture
+    }
+    try {
+      await writeSettings(file, next)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      send(res, 500, { ok: false, error: 'settings_write_failed', detail: detail.slice(0, 300) })
+      return
+    }
+    settings = normalizeSettings(next)
+    send(res, 200, { ok: true, settings, saveDir: resolveSaveDir(settings) })
+  }
+
+  /** 把请求体里的 PNG 写进保存目录。 */
+  async function saveShot(res, url, req) {
+    const buffer = await readBinary(req, MAX_SAVE_BYTES)
+    if (!isPng(buffer)) {
+      send(res, 400, { ok: false, error: 'not_png' })
+      return
+    }
+    await settingsReady
+    const dir = resolveSaveDir(settings)
+    await mkdir(dir, { recursive: true })
+    const name = await uniqueName(dir, safeFileName(url.searchParams.get('name')))
+    const path = join(dir, name)
+    await writeFile(path, buffer)
+    rememberWritten(written, path)
+    send(res, 200, { ok: true, path, dir, name, bytes: buffer.length })
   }
 
   async function handler(req, res) {
@@ -193,6 +344,35 @@ export function apply(ctx) {
         return
       }
 
+      if (route === '/settings') {
+        if (method === 'GET') {
+          send(res, 200, await readSettingsPayload())
+          return
+        }
+        if (method === 'POST') {
+          const body = await readBody(req).catch(() => ({}))
+          await updateSettings(res, body)
+          return
+        }
+      }
+
+      if (method === 'POST' && route === '/save') {
+        await saveShot(res, url, req)
+        return
+      }
+
+      if (method === 'POST' && route === '/reveal') {
+        const body = await readBody(req).catch(() => ({}))
+        const path = typeof body.path === 'string' ? body.path : ''
+        if (!written.has(path)) {
+          send(res, 404, { ok: false, error: 'not_found' })
+          return
+        }
+        revealInFileManager(path)
+        send(res, 200, { ok: true })
+        return
+      }
+
       if (method === 'POST' && route === '/settings-screen') {
         const body = await readBody(req).catch(() => ({}))
         send(res, 200, { ok: backend.openSettings(body.pane === 'accessibility' ? 'accessibility' : 'screen') })
@@ -217,7 +397,8 @@ export function apply(ctx) {
       send(res, 404, { ok: false, error: 'not_found' })
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
-      send(res, 500, { ok: false, error: 'internal', detail: detail.slice(0, 300) })
+      const status = detail === 'body_too_large' ? 413 : 500
+      send(res, status, { ok: false, error: status === 413 ? 'body_too_large' : 'internal', detail: detail.slice(0, 300) })
     }
   }
 
@@ -228,5 +409,6 @@ export function apply(ctx) {
     backend.dispose()
     for (const id of [...shots.keys()]) dropShot(id)
     capturing = false
+    written.clear()
   })
 }

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Screenshot",
-    "description": "One composer toolbar button: pick region, window, or whole screen. The image lands in the draft as an attachment."
+    "description": "A composer toolbar button for region, window, or whole-screen captures. Attach the image to the draft or save it to disk (Desktop by default). Settings › Screenshot changes the shortcut, the save folder, and whether the window steps aside while you capture."
   }
 }
