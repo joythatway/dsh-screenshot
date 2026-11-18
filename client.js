@@ -57,7 +57,7 @@ window.__ModuleLoader__.load({
       'gallery.save': '保存',
       'gallery.zoomIn': '放大',
       'gallery.zoomOut': '缩小',
-      'gallery.resetZoom': '恢复到 100%',
+      'gallery.resetZoom': '恢复到 100%（滚轮也可以缩放）',
       'settings.nav': '截图',
       'settings.shortcut.title': '截图快捷键',
       'settings.shortcut.description': '按下直接整屏截图，和菜单里的「整屏截图」等价',
@@ -128,7 +128,7 @@ window.__ModuleLoader__.load({
       'gallery.save': 'Save',
       'gallery.zoomIn': 'Zoom in',
       'gallery.zoomOut': 'Zoom out',
-      'gallery.resetZoom': 'Reset to 100%',
+      'gallery.resetZoom': 'Reset to 100% (mouse wheel also zooms)',
       'settings.nav': 'Screenshot',
       'settings.shortcut.title': 'Screenshot shortcut',
       'settings.shortcut.description': 'Captures the whole screen directly; same as Whole screen in the menu',
@@ -386,6 +386,8 @@ window.__ModuleLoader__.load({
       const [failed, setFailed] = useState(false)
       const [zoom, setZoom] = useState(1)
       const [natural, setNatural] = useState(null)
+      const rootRef = useRef(null)
+      const stageRef = useRef(null)
 
       useEffect(() => {
         const listener = () => setState(gallery)
@@ -446,6 +448,63 @@ window.__ModuleLoader__.load({
         setZoom((value) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * factor * 100) / 100)))
       }
 
+      /** 滚轮 / 触控板双指：往上放大、往下缩小；缩略图条上的滚轮留给它自己滚动。 */
+      function onWheel(event) {
+        const target = event.target
+        if (target instanceof Element && target.closest('.sp-shot-gallery-strip') !== null) return
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1
+        const delta = (typeof event.deltaY === 'number' ? event.deltaY : 0) * unit
+        if (delta === 0) return
+        zoomBy(Math.exp(-delta * 0.0015))
+      }
+
+      // 每次缩放都把视口对准图片中心：放大的第一眼看到的是中间，不是左上角。
+      useEffect(() => {
+        const stage = stageRef.current
+        if (stage === null) return
+        stage.scrollLeft = Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2)
+        stage.scrollTop = Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2)
+      }, [zoom])
+
+      // React 的 wheel 监听是 passive 的，preventDefault 得用原生监听补一刀，
+      // 否则滚轮会顺带把后面的页面也滚走。
+      useEffect(() => {
+        const node = rootRef.current
+        if (node === null || typeof node.addEventListener !== 'function') return undefined
+        const blockDefault = (event) => {
+          const target = event.target
+          if (target instanceof Element && target.closest('.sp-shot-gallery-strip') !== null) return
+          event.preventDefault()
+        }
+        node.addEventListener('wheel', blockDefault, { passive: false })
+        return () => {
+          node.removeEventListener('wheel', blockDefault)
+        }
+      }, [state === null])
+
+      /** 放大之后用鼠标拖图片平移：滚轮已经被缩放占用，得留一条移动的路。 */
+      function startPan(event) {
+        const stage = stageRef.current
+        if (stage === null || event.button !== 0 || zoom <= 1) return
+        const startX = event.clientX
+        const startY = event.clientY
+        const startLeft = stage.scrollLeft
+        const startTop = stage.scrollTop
+        const move = (moveEvent) => {
+          stage.scrollLeft = startLeft - (moveEvent.clientX - startX)
+          stage.scrollTop = startTop - (moveEvent.clientY - startY)
+        }
+        const end = () => {
+          window.removeEventListener('pointermove', move)
+          window.removeEventListener('pointerup', end)
+          if (stage instanceof Element) stage.classList.remove('panning')
+        }
+        if (stage instanceof Element) stage.classList.add('panning')
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', end)
+        event.preventDefault()
+      }
+
       if (state === null || state.urls.length === 0) return null
       const index = Math.min(Math.max(state.index, 0), state.urls.length - 1)
       const current = state.urls[index]
@@ -482,10 +541,12 @@ window.__ModuleLoader__.load({
       }
 
       return createPortal(h('div', {
+        ref: rootRef,
         className: 'sp-shot-gallery',
         role: 'dialog',
         'aria-modal': 'true',
         onMouseDown: closeOnBackdrop,
+        onWheel,
       },
         h('style', { key: 'css' }, GALLERY_CSS),
         h('div', {
@@ -542,6 +603,7 @@ window.__ModuleLoader__.load({
         ),
         h('div', {
           key: 'stage',
+          ref: stageRef,
           className: 'sp-shot-gallery-stage',
           onMouseDown: closeOnBackdrop,
         },
@@ -552,15 +614,17 @@ window.__ModuleLoader__.load({
               src: current,
               alt: '',
               draggable: false,
+              onPointerDown: startPan,
               onLoad: (event) => {
                 const image = event.currentTarget
                 if (image.naturalWidth > 0 && image.naturalHeight > 0) {
                   setNatural({ width: image.naturalWidth, height: image.naturalHeight })
                 }
               },
-              style: natural === null
-                ? undefined
-                : { width: `${imageWidth}px`, maxWidth: 'none', maxHeight: 'none' },
+              style: {
+                cursor: zoom > 1 ? 'grab' : 'default',
+                ...(natural === null ? {} : { width: `${imageWidth}px`, maxWidth: 'none', maxHeight: 'none' }),
+              },
             })),
         ),
         index === 0 ? null : h('button', {
@@ -708,6 +772,7 @@ window.__ModuleLoader__.load({
         flex: none;
         margin: auto;
       }
+      .sp-shot-gallery-stage.panning { cursor: grabbing; }
       .sp-shot-gallery-image {
         display: block;
         max-width: calc(100vw - 192px);

@@ -565,7 +565,14 @@ test('单张截图点开预览：近黑背景、顶部缩放 + 保存', async ()
   const back = render(React, gallery.component, {})
   assert.match(texts(back).join('\n'), /100%/u, '缩小回 100%')
 
-  const saveButton = findClickable(back, '保存')
+  // 滚轮缩放：往上放大、往下缩小，和豆包一致。
+  const wheelHost = find(back, (element) => element.props !== undefined && typeof element.props.onWheel === 'function')
+  assert.ok(wheelHost !== null, '预览层应该接滚轮事件')
+  wheelHost.props.onWheel({ deltaY: -100, deltaMode: 0, target: null })
+  const wheeled = render(React, gallery.component, {})
+  assert.match(texts(wheeled).join('\n'), /116%/u, '向上滚应该放大')
+
+  const saveButton = findClickable(wheeled, '保存')
   assert.ok(saveButton !== null, '顶部应该有保存按钮')
   saveButton.props.onClick()
   await sleep(80)
