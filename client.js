@@ -301,13 +301,18 @@ window.__ModuleLoader__.load({
         }
       }, [])
       useEffect(() => {
-        if (state === null) return
-        const timer = setTimeout(() => dismissToast(state.seq), state.action === undefined ? 4000 : 12000)
+        if (state === null) return undefined
+        // 3 秒足够看清路径；想提前关掉点一下提示即可。
+        const timer = setTimeout(() => dismissToast(state.seq), 3000)
         return () => clearTimeout(timer)
       }, [state])
 
       if (state === null) return null
-      return createPortal(h('div', { className: 'sp-toast', role: 'status' },
+      return createPortal(h('div', {
+        className: 'sp-toast',
+        role: 'status',
+        onClick: () => dismissToast(state.seq),
+      },
         h('style', { key: 'css' }, TOAST_CSS),
         h('span', { style: { flex: 1 } }, state.text),
         state.action === undefined ? null : h('button', {
@@ -519,7 +524,9 @@ window.__ModuleLoader__.load({
       const imageWidth = natural === null ? undefined : Math.max(24, Math.round(natural.width * fitScale * zoom))
       const percent = Math.round(zoom * 100)
       const closeOnBackdrop = (event) => {
-        if (event.target === event.currentTarget) publishGallery(null)
+        if (event.target !== event.currentTarget) return
+        closedByBackdrop = Date.now()
+        publishGallery(null)
       }
       const saveCurrent = async () => {
         if (busy) return
@@ -538,6 +545,9 @@ window.__ModuleLoader__.load({
           return
         }
         announceSaved(payload)
+        // 存完就退出预览：接下来多半是要继续打字。
+        closedByBackdrop = Date.now()
+        publishGallery(null)
       }
 
       return createPortal(h('div', {
@@ -977,6 +987,8 @@ window.__ModuleLoader__.load({
       publishReview(null)
     }
 
+    // 提示条用和预览顶栏同一套深色玻璃：bg-overlay 在深色主题里是中灰，
+    // 浮在近黑的预览上会发白发浅，所以这里直接用固定的深色材质。
     const TOAST_CSS = `
       .sp-toast {
         position: fixed;
@@ -990,26 +1002,28 @@ window.__ModuleLoader__.load({
         gap: 10px;
         max-width: min(560px, calc(100vw - 48px));
         padding: 10px 14px;
+        border: .5px solid rgba(255, 255, 255, .14);
         border-radius: 12px;
-        border: 1px solid var(--dsw-alias-border-l1);
-        background: var(--dsw-alias-bg-overlay);
-        color: var(--dsw-alias-label-primary);
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+        background: rgba(30, 30, 32, .92);
+        backdrop-filter: blur(24px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+        color: #fff;
         font-size: 13px;
         line-height: 1.5;
+        cursor: pointer;
       }
       .sp-toast-button {
         flex: none;
         padding: 4px 10px;
+        border: .5px solid rgba(255, 255, 255, .22);
         border-radius: 8px;
-        border: 1px solid var(--dsw-alias-border-l2);
-        background: transparent;
-        color: var(--dsw-alias-brand-primary);
+        background: rgba(255, 255, 255, .08);
+        color: #fff;
         font: inherit;
         font-size: 12px;
         cursor: pointer;
       }
-      .sp-toast-button:hover { background: var(--dsw-alias-bg-layer-2); }
+      .sp-toast-button:hover { background: rgba(255, 255, 255, .18); }
     `
 
     const BUTTON_CSS = `
@@ -1876,6 +1890,9 @@ window.__ModuleLoader__.load({
     // 根 ctx，供按钮里的截图流程取 conversation 服务；apply 时赋值。
     let ctxRef = null
 
+    /** 最近一次「点空白关掉预览」的时间：同一手势的 click 不该再打开它。 */
+    let closedByBackdrop = 0
+
     // ---- 设置与快捷键：Host 持久化，这里只留一份给界面读的缓存 --------------
 
     /** 快捷键命令 id；改名等于丢掉用户已有的绑定，所以保持不变。 */
@@ -2215,8 +2232,11 @@ window.__ModuleLoader__.load({
         const onClick = (event) => {
           const target = event.target
           if (!(target instanceof Element)) return
+          // 刚点空白关掉预览时，同一手势产生的 click 不能再把它打开。
+          if (Date.now() - closedByBackdrop < 400) return
           // 自己的浮层开着时不再接管，否则按钮会被这里拦掉。
           if (gallery !== null || review !== null) return
+          if (typeof target.closest === 'function' && target.closest('.sp-shot-gallery, .sp-shot-review') !== null) return
           const ids = Array.isArray(attachmentIdsRef.current) ? attachmentIdsRef.current : []
           const urls = draftImageUrls(ids)
           if (urls.length === 0) return
@@ -2231,6 +2251,9 @@ window.__ModuleLoader__.load({
           if (hasPoint) {
             // 只取指针处最上层的元素：缩略图上的删除叉在它上面，因此不会误判。
             const hit = document.elementFromPoint(x, y)
+            // 指针下是预览 / 确认框自己的内容，一律不接管。
+            if (hit instanceof Element && typeof hit.closest === 'function'
+              && hit.closest('.sp-shot-gallery, .sp-shot-review') !== null) return
             if (hit instanceof HTMLImageElement) image = hit
             else if (hit instanceof Element) {
               const nested = hit.querySelector('img')

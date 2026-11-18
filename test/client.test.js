@@ -577,12 +577,14 @@ test('单张截图点开预览：近黑背景、顶部缩放 + 保存', async ()
   saveButton.props.onClick()
   await sleep(80)
   assert.ok(calls.some((call) => call.method === 'POST' && call.target.includes('/save')), '保存应该 POST /save')
+  assert.equal(render(React, gallery.component, {}), null, '保存成功后应该退出预览')
 
   const toastHost = registered.find((entry) => entry.options.id === 'screenshot-picker-toast')
   const toastTree = render(React, toastHost.component, {})
   assert.match(texts(toastTree).join('\n'), /已保存到/u)
   const toastStyle = find(toastTree, (element) => element.type === 'style')
   assert.match(String(toastStyle.props.children), /z-index: 950/u, '提示要浮在预览上面')
+  assert.match(String(toastStyle.props.children), /rgba\(30, 30, 32, \.92\)/u, '提示应该是深色玻璃，不是浅灰')
 })
 
 test('点输入框不会打开预览：祖先里有缩略图也不行', async () => {
@@ -669,4 +671,35 @@ test('预览打开后，点里面的按钮不再被点击拦截', async () => {
   dispatch('click', event)
   assert.equal(state.prevented, false)
   assert.equal(state.stopped, false)
+})
+
+test('点空白关掉预览后，同一手势的点击不会又把它打开', async () => {
+  const { fetch } = network()
+  const { module, React, image, dispatch, setPointHit } = loadClient({ fetch })
+  const previewUrl = 'blob:shot-preview'
+  const { ctx, registered, shortcut } = createContext({
+    attachments: [{ id: 'draft-1', kind: 'image', previewUrl }],
+  })
+  module.apply(ctx)
+
+  const controls = registered.find((entry) => entry.options.name === 'conversation.input.left')
+  render(React, controls.component, composerProps(['draft-1']))
+  shortcut().resolve({}).run()
+  await sleep(400)
+
+  const gallery = registered.find((entry) => entry.options.id === 'screenshot-picker-gallery')
+  const thumbnail = image(previewUrl)
+  setPointHit(thumbnail)
+  dispatch('click', clickEvent(thumbnail, { clientX: 300, clientY: 720 }).event)
+  const opener = render(React, gallery.component, {})
+  assert.ok(opener !== null, '应该先打开预览')
+
+  // 点遮罩空白：走 mousedown 关闭。
+  const overlay = find(opener, (element) => element.props !== undefined && element.props.className === 'sp-shot-gallery')
+  overlay.props.onMouseDown({ target: overlay, currentTarget: overlay })
+  assert.equal(render(React, gallery.component, {}), null, '点空白应该关掉预览')
+
+  // 同一手势里紧接着的 click（比如落在草稿缩略图上）不能再打开。
+  dispatch('click', clickEvent(thumbnail, { clientX: 300, clientY: 720 }).event)
+  assert.equal(render(React, gallery.component, {}), null, '同一手势不该重新打开预览')
 })
