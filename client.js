@@ -1352,7 +1352,7 @@ window.__ModuleLoader__.load({
         'aria-checked': props.checked === true ? 'true' : 'false',
         'aria-label': props.label,
         disabled: props.disabled === true,
-        className: props.checked === true ? 'sp-set-switch on' : 'sp-set-switch',
+        className: 'sp-set-switch',
         onClick: () => {
           if (props.disabled !== true) props.onChange(props.checked !== true)
         },
@@ -1809,32 +1809,37 @@ window.__ModuleLoader__.load({
         outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
         outline-offset: 1px;
       }
+      /* 和 Harness 内置 Switch 同一套：36×20、2px 内边距、border-l3 轨道、
+         switch-thumb 滑块、品牌色开启态。改颜色就等于换主题。 */
       .sp-set-switch {
+        box-sizing: border-box;
         position: relative;
-        flex: none;
-        width: 32px;
+        flex: 0 0 auto;
+        width: 36px;
         height: 20px;
-        padding: 0;
-        border: none;
+        padding: 2px;
+        border: 0;
         border-radius: 999px;
-        background: var(--dsw-alias-state-idle-primary, rgba(128, 128, 128, .45));
+        background: var(--dsw-alias-border-l3, rgba(255, 255, 255, .16));
         cursor: pointer;
         transition: background-color .12s ease;
       }
-      .sp-set-switch.on { background: var(--dsw-alias-brand-primary); }
-      .sp-set-switch:disabled { opacity: .5; cursor: default; }
+      .sp-set-switch[aria-checked="true"] { background: var(--dsw-alias-brand-primary); }
+      .sp-set-switch:disabled { cursor: default; opacity: .5; }
+      .sp-set-switch:focus-visible {
+        outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary)));
+        outline-offset: 2px;
+      }
       .sp-set-knob {
-        position: absolute;
-        top: 2px;
-        left: 2px;
+        display: block;
         width: 16px;
         height: 16px;
-        border-radius: 999px;
-        background: #fff;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+        border-radius: 50%;
+        background: var(--dsw-alias-label-primary-foreground, #fff);
         transition: transform .12s ease;
       }
-      .sp-set-switch.on .sp-set-knob { transform: translateX(12px); }
+      .sp-set-switch[aria-checked="false"] .sp-set-knob { background: var(--dsw-alias-switch-thumb, #fff); }
+      .sp-set-switch[aria-checked="true"] .sp-set-knob { transform: translate(16px); }
       .sp-set-foot {
         padding: 14px 0 4px;
         font-size: 12px;

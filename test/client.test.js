@@ -396,13 +396,25 @@ test('设置页渲染出三行偏好和快捷键', () => {
   const { ctx, registered } = createContext()
   module.apply(ctx)
   const section = registered.find((entry) => entry.options.name === 'settings.section')
-  const rendered = texts(render(React, section.component, { close: () => {} })).join('\n')
+  const tree = render(React, section.component, { close: () => {} })
+  const rendered = texts(tree).join('\n')
   assert.match(rendered, /截图快捷键/u)
   assert.match(rendered, /保存位置/u)
   assert.match(rendered, /框选时自动隐藏窗口/u)
   assert.match(rendered, /修改/u)
   assert.match(rendered, /选择…/u)
   assert.match(rendered, /设置立即生效/u)
+
+  // 开关要跟 Harness 内置 Switch 一致：36×20、border-l3 轨道、switch-thumb 滑块。
+  const toggle = find(tree, (element) => element.props !== undefined && element.props.role === 'switch')
+  assert.ok(toggle !== null, '应该有开关')
+  assert.equal(toggle.props['aria-checked'], 'true')
+  const css = String(find(tree, (element) => element.type === 'style').props.children)
+  assert.match(css, /width: 36px/u)
+  assert.match(css, /padding: 2px/u)
+  assert.match(css, /--dsw-alias-border-l3/u)
+  assert.match(css, /--dsw-alias-switch-thumb/u)
+  assert.match(css, /\[aria-checked="true"\]/u)
 })
 
 test('工具栏按钮渲染成相机按钮，插件行配置页复用设置页', () => {
