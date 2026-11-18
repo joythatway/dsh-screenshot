@@ -212,8 +212,8 @@ function loadClient(options = {}) {
   // DOM 替身必须在沙箱里定义，client.js 的 instanceof 才认。
   vm.runInContext(`
     globalThis.Element = class Element {
-      constructor(tag) { this.tag = tag; this.parentElement = null }
-      querySelector() { return null }
+      constructor(tag) { this.tag = tag; this.parentElement = null; this.querySelectorResult = null }
+      querySelector() { return this.querySelectorResult }
     }
     globalThis.HTMLImageElement = class HTMLImageElement extends globalThis.Element {
       constructor(src) { super('img'); this.src = src }
@@ -236,6 +236,14 @@ function loadClient(options = {}) {
     module,
     React,
     listeners,
+    newElement: (tag) => new sandbox.Element(tag),
+    /** 控制 elementFromPoint 返回什么：真实浏览器里它取的是指针最上层元素。 */
+    setPointHit: (element) => {
+      sandbox.document.elementFromPoint = () => element
+    },
+    clearPointHit: () => {
+      delete sandbox.document.elementFromPoint
+    },
     /** 造一个沙箱里的 <img>，用于模拟点缩略图。 */
     image: (src) => new sandbox.HTMLImageElement(src),
     /** 触发 document 上注册过的某类事件。 */
@@ -342,6 +350,18 @@ function network() {
     return { ok: false, json: async () => null, blob: async () => null }
   }
   return { calls, fetch: fetchStub }
+}
+
+/** 造一个点击事件，记录是否被插件拦下。 */
+function clickEvent(target, extra = {}) {
+  const state = { prevented: false, stopped: false }
+  const event = {
+    target,
+    preventDefault() { state.prevented = true },
+    stopPropagation() { state.stopped = true },
+    ...extra,
+  }
+  return { event, state }
 }
 
 /** 一个带输入框的会话：让 handles / currentSessionId 就位。 */
@@ -556,4 +576,90 @@ test('单张截图点开预览：近黑背景、顶部缩放 + 保存', async ()
   assert.match(texts(toastTree).join('\n'), /已保存到/u)
   const toastStyle = find(toastTree, (element) => element.type === 'style')
   assert.match(String(toastStyle.props.children), /z-index: 950/u, '提示要浮在预览上面')
+})
+
+test('点输入框不会打开预览：祖先里有缩略图也不行', async () => {
+  const { fetch } = network()
+  const { module, React, image, dispatch, setPointHit, newElement } = loadClient({ fetch })
+  const previewUrl = 'blob:shot-preview'
+  const { ctx, registered, shortcut } = createContext({
+    attachments: [{ id: 'draft-1', kind: 'image', previewUrl }],
+  })
+  module.apply(ctx)
+
+  const controls = registered.find((entry) => entry.options.name === 'conversation.input.left')
+  render(React, controls.component, composerProps(['draft-1']))
+  shortcut().resolve({}).run()
+  await sleep(400)
+
+  // 输入框外面包着的卡片里正好有缩略图：老实现会顺着祖先找到 img 并吞掉点击。
+  const thumbnail = image(previewUrl)
+  const composer = newElement('div')
+  composer.querySelectorResult = thumbnail
+  const textarea = newElement('textarea')
+  textarea.parentElement = composer
+  setPointHit(textarea)
+
+  const { event, state } = clickEvent(textarea, { clientX: 120, clientY: 700 })
+  dispatch('click', event)
+  assert.equal(state.prevented, false, '不该拦掉输入框的点击')
+  assert.equal(state.stopped, false, '不该阻止事件冒泡')
+
+  const gallery = registered.find((entry) => entry.options.id === 'screenshot-picker-gallery')
+  assert.equal(render(React, gallery.component, {}), null, '不该打开预览')
+})
+
+test('点缩略图上的删除叉不会被预览拦截', async () => {
+  const { fetch } = network()
+  const { module, React, image, dispatch, setPointHit, newElement } = loadClient({ fetch })
+  const previewUrl = 'blob:shot-preview'
+  const { ctx, registered, shortcut } = createContext({
+    attachments: [{ id: 'draft-1', kind: 'image', previewUrl }],
+  })
+  module.apply(ctx)
+  const controls = registered.find((entry) => entry.options.name === 'conversation.input.left')
+  render(React, controls.component, composerProps(['draft-1']))
+  shortcut().resolve({}).run()
+  await sleep(400)
+
+  // 删除叉盖在缩略图角上：指针处最上层是叉子按钮，里面没有 img。
+  const removeButton = newElement('button')
+  removeButton.querySelectorResult = null
+  setPointHit(removeButton)
+  const { event, state } = clickEvent(removeButton, { clientX: 300, clientY: 720 })
+  dispatch('click', event)
+  assert.equal(state.prevented, false)
+  assert.equal(state.stopped, false)
+
+  const gallery = registered.find((entry) => entry.options.id === 'screenshot-picker-gallery')
+  assert.equal(render(React, gallery.component, {}), null)
+})
+
+test('预览打开后，点里面的按钮不再被点击拦截', async () => {
+  const { fetch } = network()
+  const { module, React, image, dispatch, setPointHit, newElement, clearPointHit } = loadClient({ fetch })
+  const previewUrl = 'blob:shot-preview'
+  const { ctx, registered, shortcut } = createContext({
+    attachments: [{ id: 'draft-1', kind: 'image', previewUrl }],
+  })
+  module.apply(ctx)
+  const controls = registered.find((entry) => entry.options.name === 'conversation.input.left')
+  render(React, controls.component, composerProps(['draft-1']))
+  shortcut().resolve({}).run()
+  await sleep(400)
+
+  // 点缩略图打开预览。
+  const thumbnail = image(previewUrl)
+  setPointHit(thumbnail)
+  dispatch('click', clickEvent(thumbnail, { clientX: 300, clientY: 720 }).event)
+  const gallery = registered.find((entry) => entry.options.id === 'screenshot-picker-gallery')
+  assert.ok(render(React, gallery.component, {}) !== null, '应该打开预览')
+
+  // 预览里的按钮：不要再被「草稿缩略图」逻辑拦掉。
+  clearPointHit()
+  const saveButton = newElement('button')
+  const { event, state } = clickEvent(saveButton, { clientX: 900, clientY: 40 })
+  dispatch('click', event)
+  assert.equal(state.prevented, false)
+  assert.equal(state.stopped, false)
 })

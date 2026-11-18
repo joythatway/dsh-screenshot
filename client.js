@@ -2143,37 +2143,43 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
-      // 草稿里有多张图片时，点缩略图打开带左右切换的画廊；
-      // 单张图只有「本插件截的」才接管（内置 ImageLightbox 没有保存按钮）。
+      // 点草稿缩略图打开自己的预览（单张截图也接管，内置 ImageLightbox 没有保存按钮）。
+      // 关键：只认「指针下面真的压着这张图」。早先版本向上找 img，结果点输入框、
+      // 点预览里的按钮、点缩略图上的删除叉都会命中祖先里的图，把点击吞掉。
       useEffect(() => {
         const onClick = (event) => {
           const target = event.target
           if (!(target instanceof Element)) return
-          // 草稿缩略图的外层不一定是 button（可能是 div / li），往上找几层拿 img。
-          let image = null
-          let node = target
-          for (let depth = 0; depth < 5 && node !== null && node !== undefined; depth += 1) {
-            if (node instanceof HTMLImageElement) {
-              image = node
-              break
-            }
-            const nested = typeof node.querySelector === 'function' ? node.querySelector('img') : null
-            if (nested instanceof HTMLImageElement) {
-              image = nested
-              break
-            }
-            node = node.parentElement
-          }
-          if (image === null) return
+          // 自己的浮层开着时不再接管，否则按钮会被这里拦掉。
+          if (gallery !== null || review !== null) return
           const ids = Array.isArray(attachmentIdsRef.current) ? attachmentIdsRef.current : []
           const urls = draftImageUrls(ids)
+          if (urls.length === 0) return
           const ours = ids.some((id) => ownDraftIds.has(id))
           if (urls.length < 2 && !(urls.length === 1 && ours)) return
-          const index = urls.indexOf(image.src)
-          if (index === -1) return
+
+          const x = typeof event.clientX === 'number' ? event.clientX : Number.NaN
+          const y = typeof event.clientY === 'number' ? event.clientY : Number.NaN
+          const hasPoint = Number.isFinite(x) && Number.isFinite(y) && (x !== 0 || y !== 0)
+            && typeof document.elementFromPoint === 'function'
+          let image = null
+          if (hasPoint) {
+            // 只取指针处最上层的元素：缩略图上的删除叉在它上面，因此不会误判。
+            const hit = document.elementFromPoint(x, y)
+            if (hit instanceof HTMLImageElement) image = hit
+            else if (hit instanceof Element) {
+              const nested = hit.querySelector('img')
+              if (nested instanceof HTMLImageElement) image = nested
+            }
+          } else {
+            // 键盘触发的 click 没有坐标，退回目标元素自身。
+            const candidate = target instanceof HTMLImageElement ? target : target.querySelector('img')
+            if (candidate instanceof HTMLImageElement) image = candidate
+          }
+          if (image === null || !urls.includes(image.src)) return
           event.preventDefault()
           event.stopPropagation()
-          publishGallery({ urls, index })
+          publishGallery({ urls, index: urls.indexOf(image.src) })
         }
         document.addEventListener('click', onClick, true)
         return () => {
