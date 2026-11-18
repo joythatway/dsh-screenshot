@@ -703,3 +703,60 @@ test('点空白关掉预览后，同一手势的点击不会又把它打开', as
   dispatch('click', clickEvent(thumbnail, { clientX: 300, clientY: 720 }).event)
   assert.equal(render(React, gallery.component, {}), null, '同一手势不该重新打开预览')
 })
+
+test('横图切竖图不会先套用上一张的尺寸闪一下', async () => {
+  const { fetch } = network()
+  const { module, React, image, dispatch, setPointHit } = loadClient({ fetch })
+  const wide = 'blob:wide-shot'
+  const tall = 'blob:tall-shot'
+  const { ctx, registered } = createContext({
+    attachments: [
+      { id: 'draft-1', kind: 'image', previewUrl: wide },
+      { id: 'draft-2', kind: 'image', previewUrl: tall },
+    ],
+  })
+  module.apply(ctx)
+
+  const controls = registered.find((entry) => entry.options.name === 'conversation.input.left')
+  render(React, controls.component, composerProps(['draft-1', 'draft-2']))
+  setPointHit(image(wide))
+  dispatch('click', clickEvent(image(wide), { clientX: 300, clientY: 720 }).event)
+
+  const gallery = registered.find((entry) => entry.options.id === 'screenshot-picker-gallery')
+  const first = render(React, gallery.component, {})
+  assert.ok(first !== null, '应该打开预览')
+
+  // 横图 onLoad：1600×900
+  const wideImage = find(first, (element) => element.props !== undefined && element.props.className === 'sp-shot-gallery-image')
+  wideImage.props.onLoad({ currentTarget: { naturalWidth: 1600, naturalHeight: 900 } })
+  const measuredWide = render(React, gallery.component, {})
+  const wideAgain = find(measuredWide, (element) => element.props !== undefined && element.props.className === 'sp-shot-gallery-image')
+  assert.match(String(wideAgain.props.style.width), /^\d+px$/u, '横图应该有按视口算出来的宽度')
+
+  // 切到竖图：新的图还没 onLoad，绝对不能沿用横图的宽度。
+  const thumbs = []
+  const collect = (node) => {
+    if (node === null || node === undefined || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(collect); return }
+    if (node.props !== undefined && typeof node.props.className === 'string'
+      && node.props.className.startsWith('sp-shot-gallery-thumb')) thumbs.push(node)
+    collect(node.props === undefined ? undefined : node.props.children)
+  }
+  collect(measuredWide)
+  assert.equal(thumbs.length, 2, '应该有两个缩略图')
+  const secondThumb = thumbs[1]
+  secondThumb.props.onClick()
+
+  const switched = render(React, gallery.component, {})
+  const tallImage = find(switched, (element) => element.props !== undefined && element.props.className === 'sp-shot-gallery-image')
+  assert.equal(tallImage.props.src, tall, '应该切到竖图')
+  assert.equal(tallImage.props.style.width, undefined, '竖图 onLoad 前不能有像素宽度')
+
+  // 竖图 onLoad 后再按自己的比例算。
+  tallImage.props.onLoad({ currentTarget: { naturalWidth: 900, naturalHeight: 1600 } })
+  const measuredTall = render(React, gallery.component, {})
+  const tallAgain = find(measuredTall, (element) => element.props !== undefined && element.props.className === 'sp-shot-gallery-image')
+  const tallWidth = Number.parseInt(String(tallAgain.props.style.width), 10)
+  assert.ok(Number.isFinite(tallWidth) && tallWidth > 0, '竖图应该有宽度')
+  assert.ok(tallWidth < 900, '竖图按高度收窄，比原始宽度小')
+})

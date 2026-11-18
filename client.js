@@ -390,7 +390,9 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [failed, setFailed] = useState(false)
       const [zoom, setZoom] = useState(1)
-      const [natural, setNatural] = useState(null)
+      // 记录的是「哪张图的原始尺寸」，切图时旧数据自动失效，
+      // 不会在竖图还没 onLoad 的瞬间套用横图的像素宽度。
+      const [measured, setMeasured] = useState(null)
       const rootRef = useRef(null)
       const stageRef = useRef(null)
 
@@ -403,12 +405,20 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
-      // 换图 / 关掉再打开时回到 100%，并重新量一下原图尺寸。
+      // 换图 / 关掉再打开时回到 100%。
       useEffect(() => {
         setZoom(1)
-        setNatural(null)
         setFailed(false)
       }, [state === null ? null : state.urls[state.index]])
+
+      // 打开预览时把同一批图都预热一次，切图时不用等解码。
+      useEffect(() => {
+        if (state === null || typeof Image === 'undefined') return
+        for (const url of state.urls) {
+          const image = new Image()
+          image.src = url
+        }
+      }, [state === null ? null : state.urls.join('|')])
 
       useEffect(() => {
         if (state === null) return undefined
@@ -514,6 +524,7 @@ window.__ModuleLoader__.load({
       const index = Math.min(Math.max(state.index, 0), state.urls.length - 1)
       const current = state.urls[index]
       const total = state.urls.length
+      const natural = measured !== null && measured.url === current ? measured : null
       const viewportWidth = typeof window === 'undefined' ? 1280 : window.innerWidth
       const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight
       // 100% 是「整张图刚好放得下」的尺寸；缩放基于它，而不是原图像素。
@@ -628,7 +639,7 @@ window.__ModuleLoader__.load({
               onLoad: (event) => {
                 const image = event.currentTarget
                 if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-                  setNatural({ width: image.naturalWidth, height: image.naturalHeight })
+                  setMeasured({ url: current, width: image.naturalWidth, height: image.naturalHeight })
                 }
               },
               style: {
