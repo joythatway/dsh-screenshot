@@ -61,11 +61,21 @@ function createReact() {
       }
       return [frame.cells[index], set]
     },
-    useEffect(effect) {
-      current.effects.push(effect)
+    useEffect(effect, deps) {
+      // 依赖数组和真 React 一样做浅比较，避免把「换图才重置」执行成每次都重置。
+      const frame = current
+      const index = frame.index++
+      const previous = frame.cells[index]
+      const changed = previous === undefined
+        || deps === undefined
+        || previous.deps === undefined
+        || deps.length !== previous.deps.length
+        || deps.some((value, position) => !Object.is(value, previous.deps[position]))
+      frame.cells[index] = { deps }
+      if (changed) frame.effects.push(effect)
     },
-    useLayoutEffect(effect) {
-      current.effects.push(effect)
+    useLayoutEffect(effect, deps) {
+      this.useEffect(effect, deps)
     },
     useRef(value) {
       const frame = current
@@ -146,6 +156,7 @@ function sleep(ms) {
 function loadClient(options = {}) {
   let definition = null
   const noop = () => {}
+  const listeners = []
   const sandbox = {
     console,
     // toast 自带 12 秒自动消失；测试里不需要长定时器，直接忽略。
@@ -189,13 +200,26 @@ function loadClient(options = {}) {
     document: {
       body: {},
       documentElement: { dataset: { platform: 'darwin' } },
-      addEventListener: noop,
+      addEventListener(type, handler) {
+        listeners.push({ type, handler })
+      },
       removeEventListener: noop,
       createElement: () => ({}),
     },
   }
   sandbox.globalThis = sandbox
   vm.createContext(sandbox)
+  // DOM 替身必须在沙箱里定义，client.js 的 instanceof 才认。
+  vm.runInContext(`
+    globalThis.Element = class Element {
+      constructor(tag) { this.tag = tag; this.parentElement = null }
+      querySelector() { return null }
+    }
+    globalThis.HTMLImageElement = class HTMLImageElement extends globalThis.Element {
+      constructor(src) { super('img'); this.src = src }
+    }
+    globalThis.HTMLButtonElement = class HTMLButtonElement extends globalThis.Element {}
+  `, sandbox)
   vm.runInContext(SOURCE, sandbox, { filename: 'client.js' })
 
   assert.ok(definition !== null, 'client.js 应该注册模块定义')
@@ -208,11 +232,21 @@ function loadClient(options = {}) {
     throw new Error(`unexpected require: ${name}`)
   }
   const module = definition.factory(require)
-  return { module, React }
+  return {
+    module,
+    React,
+    listeners,
+    /** 造一个沙箱里的 <img>，用于模拟点缩略图。 */
+    image: (src) => new sandbox.HTMLImageElement(src),
+    /** 触发 document 上注册过的某类事件。 */
+    dispatch: (type, event) => {
+      for (const listener of listeners.filter((entry) => entry.type === type)) listener.handler(event)
+    },
+  }
 }
 
 /** 假 ctx：槽位注册被记录下来，shortcuts / conversation 给可观察的替身。 */
-function createContext() {
+function createContext(options = {}) {
   const registered = []
   const attached = []
   const drafts = []
@@ -233,7 +267,7 @@ function createContext() {
       drafts.push({ sessionId, files })
       return [{ id: `draft-${drafts.length}` }]
     },
-    resolveDraftAttachments: () => [],
+    resolveDraftAttachments: () => (options.attachments === undefined ? [] : options.attachments),
     releaseDraftAttachments: () => {},
   }
   const services = { shortcuts, conversation }
@@ -285,6 +319,10 @@ function network() {
     const target = String(url)
     const method = init.method === undefined ? 'GET' : init.method
     calls.push({ target, method, body: init.body })
+    if (target.startsWith('blob:')) {
+      const png = new Blob([Uint8Array.from([0x89, 0x50, 0x4e, 0x47])])
+      return { ok: true, json: async () => null, blob: async () => png }
+    }
     if (target.endsWith('/probe')) return json({ ok: true, supported: true, modes: ['region', 'window', 'screen'] })
     if (method === 'GET' && target.endsWith('/settings')) {
       return json({
@@ -312,11 +350,11 @@ function render(React, component, props) {
   return React.createElement(component, props)
 }
 
-function composerProps() {
+function composerProps(attachmentIds = []) {
   return {
     sessionId: 'session-1',
     inputActions: { addAttachments: (ids) => true },
-    useInput: (select) => select({ attachmentIds: [] }),
+    useInput: (select) => select({ attachmentIds }),
   }
 }
 
@@ -463,4 +501,59 @@ test('确认按钮把框选结果放进草稿', async () => {
   assert.ok(confirmButton !== null, '确认框里应该有「确认」')
   confirmButton.props.onClick()
   assert.equal(drafts.length, 1, '确认后应该进草稿')
+})
+
+test('单张截图点开预览：近黑背景、顶部缩放 + 保存', async () => {
+  const { calls, fetch } = network()
+  const { module, React, image, dispatch } = loadClient({ fetch })
+  const previewUrl = 'blob:shot-preview'
+  const { ctx, registered, shortcut } = createContext({
+    attachments: [{ id: 'draft-1', kind: 'image', previewUrl }],
+  })
+  module.apply(ctx)
+
+  // 先截一张，草稿里就有一张「本插件截的」图。
+  const controls = registered.find((entry) => entry.options.name === 'conversation.input.left')
+  render(React, controls.component, composerProps(['draft-1']))
+  shortcut().resolve({}).run()
+  await sleep(400)
+
+  // 点缩略图：单张也应该进自己的预览，而不是内置灯箱。
+  dispatch('click', { target: image(previewUrl), preventDefault() {}, stopPropagation() {} })
+
+  const gallery = registered.find((entry) => entry.options.id === 'screenshot-picker-gallery')
+  const tree = render(React, gallery.component, {})
+  assert.ok(tree !== null, '点缩略图应该打开预览')
+
+  const style = find(tree, (element) => element.type === 'style')
+  assert.match(String(style.props.children), /rgba\(0, 0, 0, \.86\)/u, '背景应该接近全黑')
+  assert.match(String(style.props.children), /sp-shot-gallery-tools/u)
+
+  const rendered = texts(tree).join('\n')
+  assert.match(rendered, /100%/u, '默认 100%')
+  assert.match(rendered, /保存/u)
+  assert.equal(findByClass(tree, 'sp-shot-gallery-strip'), null, '单张不显示缩略图条')
+
+  const zoomIn = find(tree, (element) => element.props !== undefined && element.props['aria-label'] === '放大')
+  assert.ok(zoomIn !== null, '应该有放大按钮')
+  zoomIn.props.onClick()
+  const zoomed = render(React, gallery.component, {})
+  assert.match(texts(zoomed).join('\n'), /125%/u, '点放大后应该是 125%')
+
+  const zoomOut = find(zoomed, (element) => element.props !== undefined && element.props['aria-label'] === '缩小')
+  zoomOut.props.onClick()
+  const back = render(React, gallery.component, {})
+  assert.match(texts(back).join('\n'), /100%/u, '缩小回 100%')
+
+  const saveButton = findClickable(back, '保存')
+  assert.ok(saveButton !== null, '顶部应该有保存按钮')
+  saveButton.props.onClick()
+  await sleep(80)
+  assert.ok(calls.some((call) => call.method === 'POST' && call.target.includes('/save')), '保存应该 POST /save')
+
+  const toastHost = registered.find((entry) => entry.options.id === 'screenshot-picker-toast')
+  const toastTree = render(React, toastHost.component, {})
+  assert.match(texts(toastTree).join('\n'), /已保存到/u)
+  const toastStyle = find(toastTree, (element) => element.type === 'style')
+  assert.match(String(toastStyle.props.children), /z-index: 950/u, '提示要浮在预览上面')
 })

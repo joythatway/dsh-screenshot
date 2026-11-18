@@ -55,6 +55,9 @@ window.__ModuleLoader__.load({
       'gallery.next': '下一张',
       'gallery.close': '关闭预览',
       'gallery.save': '保存',
+      'gallery.zoomIn': '放大',
+      'gallery.zoomOut': '缩小',
+      'gallery.resetZoom': '恢复到 100%',
       'settings.nav': '截图',
       'settings.shortcut.title': '截图快捷键',
       'settings.shortcut.description': '按下直接整屏截图，和菜单里的「整屏截图」等价',
@@ -123,6 +126,9 @@ window.__ModuleLoader__.load({
       'gallery.next': 'Next',
       'gallery.close': 'Close preview',
       'gallery.save': 'Save',
+      'gallery.zoomIn': 'Zoom in',
+      'gallery.zoomOut': 'Zoom out',
+      'gallery.resetZoom': 'Reset to 100%',
       'settings.nav': 'Screenshot',
       'settings.shortcut.title': 'Screenshot shortcut',
       'settings.shortcut.description': 'Captures the whole screen directly; same as Whole screen in the menu',
@@ -345,10 +351,42 @@ window.__ModuleLoader__.load({
       }, h('path', { d: 'M6.1 3.4 10.7 8l-4.6 4.6' }))
     }
 
+    /** 放大镜里一个加号，和保存按钮同一套线性图标。 */
+    function ZoomInIcon(props) {
+      const size = props && Number.isFinite(props.size) ? props.size : 16
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 16 16', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': true, style: { display: 'block' },
+      },
+        h('circle', { cx: 6.9, cy: 6.9, r: 4.4 }),
+        h('path', { d: 'M10.2 10.2 13.6 13.6' }),
+        h('path', { d: 'M4.9 6.9h4M6.9 4.9v4' }),
+      )
+    }
+
+    /** 放大镜里一个减号。 */
+    function ZoomOutIcon(props) {
+      const size = props && Number.isFinite(props.size) ? props.size : 16
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 16 16', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': true, style: { display: 'block' },
+      },
+        h('circle', { cx: 6.9, cy: 6.9, r: 4.4 }),
+        h('path', { d: 'M10.2 10.2 13.6 13.6' }),
+        h('path', { d: 'M4.9 6.9h4' }),
+      )
+    }
+
+    /** 图片预览：暗色背景 + 顶部「缩小 / 百分比 / 放大 / 保存」，和豆包的预览一致。 */
     function GalleryHost() {
       const [state, setState] = useState(gallery)
       const [busy, setBusy] = useState(false)
       const [failed, setFailed] = useState(false)
+      const [zoom, setZoom] = useState(1)
+      const [natural, setNatural] = useState(null)
+
       useEffect(() => {
         const listener = () => setState(gallery)
         galleryListeners.add(listener)
@@ -357,6 +395,14 @@ window.__ModuleLoader__.load({
           galleryListeners.delete(listener)
         }
       }, [])
+
+      // 换图 / 关掉再打开时回到 100%，并重新量一下原图尺寸。
+      useEffect(() => {
+        setZoom(1)
+        setNatural(null)
+        setFailed(false)
+      }, [state === null ? null : state.urls[state.index]])
+
       useEffect(() => {
         if (state === null) return undefined
         const onKeyDown = (event) => {
@@ -370,6 +416,24 @@ window.__ModuleLoader__.load({
             event.preventDefault()
             event.stopPropagation()
             stepGallery(event.key === 'ArrowLeft' ? -1 : 1)
+            return
+          }
+          if (event.key === '+' || event.key === '=') {
+            event.preventDefault()
+            event.stopPropagation()
+            zoomBy(1.25)
+            return
+          }
+          if (event.key === '-' || event.key === '_') {
+            event.preventDefault()
+            event.stopPropagation()
+            zoomBy(0.8)
+            return
+          }
+          if (event.key === '0') {
+            event.preventDefault()
+            event.stopPropagation()
+            setZoom(1)
           }
         }
         document.addEventListener('keydown', onKeyDown, true)
@@ -378,14 +442,26 @@ window.__ModuleLoader__.load({
         }
       }, [state])
 
+      function zoomBy(factor) {
+        setZoom((value) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * factor * 100) / 100)))
+      }
+
       if (state === null || state.urls.length === 0) return null
-      // 用 portal 挂到 body：新版 composer 的祖先带 will-change/backdrop-filter，
-      // 会成为 fixed 定位的包含块，不跳出就会缩在输入框里。
-      const portal = (node) => createPortal(node, document.body)
       const index = Math.min(Math.max(state.index, 0), state.urls.length - 1)
       const current = state.urls[index]
       const total = state.urls.length
-      // 预览里的保存：拿当前这张的 blob 直接交给 Host 落盘。
+      const viewportWidth = typeof window === 'undefined' ? 1280 : window.innerWidth
+      const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight
+      // 100% 是「整张图刚好放得下」的尺寸；缩放基于它，而不是原图像素。
+      // 100% 只缩小、不放大：小图保持原尺寸，需要的话再手动放大。
+      const fitScale = natural === null
+        ? 1
+        : Math.min(1, Math.max(160, viewportWidth - 192) / natural.width, Math.max(160, viewportHeight - 200) / natural.height)
+      const imageWidth = natural === null ? undefined : Math.max(24, Math.round(natural.width * fitScale * zoom))
+      const percent = Math.round(zoom * 100)
+      const closeOnBackdrop = (event) => {
+        if (event.target === event.currentTarget) publishGallery(null)
+      }
       const saveCurrent = async () => {
         if (busy) return
         setBusy(true)
@@ -404,16 +480,89 @@ window.__ModuleLoader__.load({
         }
         announceSaved(payload)
       }
-      return portal(h('div', {
+
+      return createPortal(h('div', {
         className: 'sp-shot-gallery',
         role: 'dialog',
         'aria-modal': 'true',
-        onMouseDown: (event) => {
-          if (event.target === event.currentTarget) publishGallery(null)
-        },
+        onMouseDown: closeOnBackdrop,
       },
         h('style', { key: 'css' }, GALLERY_CSS),
-        h('img', { key: 'image', className: 'sp-shot-gallery-image', src: current, alt: '' }),
+        h('div', {
+          key: 'topbar',
+          className: 'sp-shot-gallery-topbar',
+          onMouseDown: (event) => event.stopPropagation(),
+        },
+          h('div', { key: 'tools', className: 'sp-shot-gallery-tools' },
+            total > 1
+              ? h('span', { key: 'counter', className: 'sp-shot-gallery-counter' }, `${index + 1} / ${total}`)
+              : null,
+            total > 1 ? h('span', { key: 'sep-a', className: 'sp-shot-gallery-sep' }) : null,
+            h('button', {
+              key: 'zoom-out',
+              type: 'button',
+              className: 'sp-shot-gallery-tool',
+              title: t('gallery.zoomOut', ZH['gallery.zoomOut']),
+              'aria-label': t('gallery.zoomOut', ZH['gallery.zoomOut']),
+              disabled: zoom <= MIN_ZOOM + 0.001,
+              onClick: () => zoomBy(1 / 1.25),
+            }, h(ZoomOutIcon, { size: 16 })),
+            h('button', {
+              key: 'zoom-reset',
+              type: 'button',
+              className: 'sp-shot-gallery-zoom',
+              title: t('gallery.resetZoom', ZH['gallery.resetZoom']),
+              onClick: () => setZoom(1),
+            }, `${percent}%`),
+            h('button', {
+              key: 'zoom-in',
+              type: 'button',
+              className: 'sp-shot-gallery-tool',
+              title: t('gallery.zoomIn', ZH['gallery.zoomIn']),
+              'aria-label': t('gallery.zoomIn', ZH['gallery.zoomIn']),
+              disabled: zoom >= MAX_ZOOM - 0.001,
+              onClick: () => zoomBy(1.25),
+            }, h(ZoomInIcon, { size: 16 })),
+            h('span', { key: 'sep', className: 'sp-shot-gallery-sep' }),
+            h('button', {
+              key: 'save',
+              type: 'button',
+              className: 'sp-shot-gallery-tool save',
+              title: failed ? t('save.failed', ZH['save.failed']) : t('gallery.save', ZH['gallery.save']),
+              disabled: busy,
+              onClick: () => { void saveCurrent() },
+            },
+              h(SaveIcon, { size: 15 }),
+              h('span', { key: 'label', className: 'sp-shot-gallery-save-label' }, busy ? '…' : t('gallery.save', ZH['gallery.save'])),
+            ),
+          ),
+          failed
+            ? h('span', { key: 'error', className: 'sp-shot-gallery-error', role: 'alert' }, t('save.failed', ZH['save.failed']))
+            : null,
+        ),
+        h('div', {
+          key: 'stage',
+          className: 'sp-shot-gallery-stage',
+          onMouseDown: closeOnBackdrop,
+        },
+          h('div', { key: 'frame', className: 'sp-shot-gallery-frame' },
+            h('img', {
+              key: current,
+              className: 'sp-shot-gallery-image',
+              src: current,
+              alt: '',
+              draggable: false,
+              onLoad: (event) => {
+                const image = event.currentTarget
+                if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                  setNatural({ width: image.naturalWidth, height: image.naturalHeight })
+                }
+              },
+              style: natural === null
+                ? undefined
+                : { width: `${imageWidth}px`, maxWidth: 'none', maxHeight: 'none' },
+            })),
+        ),
         index === 0 ? null : h('button', {
           key: 'prev',
           type: 'button',
@@ -430,38 +579,18 @@ window.__ModuleLoader__.load({
           'aria-label': t('gallery.next', ZH['gallery.next']),
           onClick: () => stepGallery(1),
         }, h(NextIcon, { size: 18 })),
-        h('div', {
-          key: 'footer',
-          className: 'sp-shot-gallery-footer',
+        total > 1 ? h('div', {
+          key: 'strip',
+          className: 'sp-shot-gallery-strip',
           onMouseDown: (event) => event.stopPropagation(),
         },
-          h('div', { key: 'bar', className: 'sp-shot-gallery-bar' },
-            h('div', { key: 'info', className: 'sp-shot-gallery-info' },
-              h('span', { key: 'counter', className: 'sp-shot-gallery-counter' }, `${index + 1} / ${total}`),
-              failed
-                ? h('span', { key: 'error', className: 'sp-shot-gallery-error', role: 'alert' }, t('save.failed', ZH['save.failed']))
-                : null,
-            ),
-            h('button', {
-              key: 'save',
-              type: 'button',
-              className: 'sp-shot-gallery-action',
-              disabled: busy,
-              onClick: () => { void saveCurrent() },
-            },
-              h(SaveIcon, { size: 14 }),
-              h('span', { key: 'label' }, busy ? '…' : t('gallery.save', ZH['gallery.save'])),
-            ),
-          ),
-          total > 1 ? h('div', { key: 'strip', className: 'sp-shot-gallery-strip' },
-            state.urls.map((url, position) => h('button', {
-              key: url,
-              type: 'button',
-              className: position === index ? 'sp-shot-gallery-thumb current' : 'sp-shot-gallery-thumb',
-              'aria-current': position === index,
-              onClick: () => publishGallery({ ...state, index: position }),
-            }, h('img', { src: url, alt: '' })))) : null,
-        ),
+          state.urls.map((url, position) => h('button', {
+            key: url,
+            type: 'button',
+            className: position === index ? 'sp-shot-gallery-thumb current' : 'sp-shot-gallery-thumb',
+            'aria-current': position === index,
+            onClick: () => publishGallery({ ...state, index: position }),
+          }, h('img', { src: url, alt: '' })))) : null,
         h('button', {
           key: 'close',
           type: 'button',
@@ -474,124 +603,170 @@ window.__ModuleLoader__.load({
     }
 
     const GALLERY_CSS = `
+      /* 和豆包一致的看图界面：整屏近黑遮罩，图片浮在中间，工具在顶部。 */
       .sp-shot-gallery {
         position: fixed;
         inset: 0;
         z-index: 901;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 56px 96px 128px;
-        background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, .6));
-        backdrop-filter: var(--dsw-mask-blur, blur(6px));
+        background: rgba(0, 0, 0, .86);
+        backdrop-filter: blur(10px);
       }
-      /* 用视口单位而不是百分比：grid/flex 的自动轨道里 100% 高度会被当成 auto，
-         竖版长图就会按原始高度溢出、只剩上半截可见。 */
-      .sp-shot-gallery-image {
-        display: block;
-        width: auto;
-        height: auto;
-        max-width: calc(100vw - 192px);
-        max-height: calc(100vh - 200px);
-        object-fit: contain;
-        border-radius: var(--dsw-radius-md, 8px);
-        box-shadow: var(--dsw-elevation-prominent, 0 24px 64px rgba(0, 0, 0, .4));
-      }
-      /* 与内置图片灯箱的关闭按钮同一套：36px 圆形 + 实心输入面 + 发丝描边。 */
-      .sp-shot-gallery-nav {
+      .sp-shot-gallery-topbar {
         position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 36px;
-        height: 36px;
-        display: grid;
-        place-items: center;
-        padding: 0;
-        border: .5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2));
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        max-width: calc(100vw - 128px);
+      }
+      /* 深色玻璃胶囊：缩放和保存都在这一条里。 */
+      .sp-shot-gallery-tools {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px;
+        border: .5px solid rgba(255, 255, 255, .14);
         border-radius: 999px;
-        background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-2));
-        color: var(--dsw-alias-label-primary);
+        background: rgba(30, 30, 32, .72);
+        backdrop-filter: blur(24px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+        color: #fff;
+      }
+      .sp-shot-gallery-tool {
+        display: inline-grid;
+        place-items: center;
+        box-sizing: border-box;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: none;
+        border-radius: 999px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
         cursor: pointer;
       }
-      .sp-shot-gallery-nav:hover {
-        background: var(--dsw-alias-interactive-bg-hover-solid, var(--dsw-alias-bg-layer-2));
+      .sp-shot-gallery-tool:hover:not(:disabled) { background: rgba(255, 255, 255, .12); }
+      .sp-shot-gallery-tool:disabled { opacity: .35; cursor: default; }
+      .sp-shot-gallery-tool.save {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        width: auto;
+        padding: 0 10px 0 8px;
       }
+      .sp-shot-gallery-save-label { font-size: 12px; line-height: 1; }
+      .sp-shot-gallery-zoom {
+        min-width: 46px;
+        height: 28px;
+        padding: 0 4px;
+        border: none;
+        border-radius: 999px;
+        background: transparent;
+        color: rgba(255, 255, 255, .8);
+        font: inherit;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        cursor: pointer;
+      }
+      .sp-shot-gallery-zoom:hover { background: rgba(255, 255, 255, .12); }
+      .sp-shot-gallery-counter {
+        padding: 0 6px 0 6px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, .72);
+        font-variant-numeric: tabular-nums;
+      }
+      .sp-shot-gallery-sep {
+        flex: none;
+        width: 1px;
+        height: 16px;
+        margin: 0 4px;
+        background: rgba(255, 255, 255, .16);
+      }
+      .sp-shot-gallery-error {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, .6);
+        font-size: 12px;
+        line-height: 18px;
+        color: #ff8f8f;
+      }
+      /* 图片自己滚动：放大到超出视口时，用 margin:auto 的 flex 仍然能滚到左上角。 */
+      .sp-shot-gallery-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        overflow: auto;
+        padding: 62px 96px 116px;
+      }
+      .sp-shot-gallery-frame {
+        display: flex;
+        flex: none;
+        margin: auto;
+      }
+      .sp-shot-gallery-image {
+        display: block;
+        max-width: calc(100vw - 192px);
+        max-height: calc(100vh - 200px);
+        border-radius: var(--dsw-radius-md, 8px);
+        box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+      /* 与顶部胶囊同一套：圆形深色玻璃按钮。 */
+      .sp-shot-gallery-nav,
+      .sp-shot-gallery-close {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        box-sizing: border-box;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border: .5px solid rgba(255, 255, 255, .14);
+        border-radius: 999px;
+        background: rgba(30, 30, 32, .72);
+        backdrop-filter: blur(24px);
+        color: #fff;
+        cursor: pointer;
+      }
+      .sp-shot-gallery-nav:hover,
+      .sp-shot-gallery-close:hover { background: rgba(60, 60, 64, .82); }
       .sp-shot-gallery-nav:focus-visible,
-      .sp-shot-gallery-close:focus-visible {
-        outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
-        outline-offset: 3px;
+      .sp-shot-gallery-close:focus-visible,
+      .sp-shot-gallery-tool:focus-visible,
+      .sp-shot-gallery-zoom:focus-visible {
+        outline: 2px solid rgba(255, 255, 255, .6);
+        outline-offset: 2px;
       }
+      .sp-shot-gallery-nav { top: 50%; transform: translateY(-50%); }
       .sp-shot-gallery-nav.prev { left: 24px; }
       .sp-shot-gallery-nav.next { right: 24px; }
-      .sp-shot-gallery-footer {
+      .sp-shot-gallery-close {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .sp-shot-gallery-strip {
         position: absolute;
         left: 50%;
         bottom: 18px;
         transform: translateX(-50%);
         display: flex;
-        flex-direction: column;
-        align-items: center;
         gap: 8px;
-        max-width: 86vw;
-      }
-      .sp-shot-gallery-counter {
-        font-size: 12px;
-        color: var(--dsw-alias-label-secondary);
-      }
-      .sp-shot-gallery-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        width: 100%;
-        min-width: 240px;
-      }
-      .sp-shot-gallery-info {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        min-width: 0;
-      }
-      .sp-shot-gallery-error {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-size: 12px;
-        color: var(--dsw-alias-state-error-primary);
-      }
-      /* 与灯箱的导航按钮同一套材质，只是做成带文字的胶囊。 */
-      .sp-shot-gallery-action {
-        flex: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        height: 28px;
-        padding: 0 12px;
-        border: .5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2));
-        border-radius: 999px;
-        background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-2));
-        color: var(--dsw-alias-label-primary);
-        font: inherit;
-        font-size: 12px;
-        cursor: pointer;
-      }
-      .sp-shot-gallery-action:hover:not(:disabled) {
-        background: var(--dsw-alias-interactive-bg-hover-solid, var(--dsw-alias-bg-layer-2));
-      }
-      .sp-shot-gallery-action:disabled { opacity: .6; cursor: default; }
-      .sp-shot-gallery-action:focus-visible {
-        outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary)));
-        outline-offset: 3px;
-      }
-      .sp-shot-gallery-strip {
-        display: flex;
-        gap: 8px;
-        max-width: 100%;
+        max-width: calc(100vw - 128px);
         padding: 6px;
         overflow-x: auto;
-        border: .5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2));
+        border: .5px solid rgba(255, 255, 255, .14);
         border-radius: 12px;
-        background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-2));
+        background: rgba(30, 30, 32, .72);
+        backdrop-filter: blur(24px);
       }
       .sp-shot-gallery-thumb {
         flex: none;
@@ -615,29 +790,10 @@ window.__ModuleLoader__.load({
       .sp-shot-gallery-thumb:hover { opacity: 1; }
       .sp-shot-gallery-thumb.current {
         opacity: 1;
-        border-color: var(--dsw-alias-label-primary);
-      }
-      .sp-shot-gallery-close {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        width: 36px;
-        height: 36px;
-        display: grid;
-        place-items: center;
-        padding: 0;
-        border: .5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2));
-        border-radius: 999px;
-        background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-2));
-        color: var(--dsw-alias-label-primary);
-        font-size: 18px;
-        line-height: 1;
-        cursor: pointer;
-      }
-      .sp-shot-gallery-close:hover {
-        background: var(--dsw-alias-interactive-bg-hover-solid, var(--dsw-alias-bg-layer-2));
+        border-color: rgba(255, 255, 255, .9);
       }
     `
+
 
     function ReviewHost() {
       const [state, setState] = useState(review)
@@ -762,7 +918,8 @@ window.__ModuleLoader__.load({
         left: 50%;
         bottom: 108px;
         transform: translateX(-50%);
-        z-index: 850;
+        /* 预览层是 901：保存成功的提示必须浮在它上面。 */
+        z-index: 950;
         display: flex;
         align-items: center;
         gap: 10px;
@@ -1614,6 +1771,9 @@ window.__ModuleLoader__.load({
     }
 
     const ALL_MODES = ['region', 'window', 'screen']
+    /** 预览的缩放范围：25% ~ 400%，100% = 整张图刚好放得下。 */
+    const MIN_ZOOM = 0.25
+    const MAX_ZOOM = 4
     const EMPTY_INPUT = { attachmentIds: [] }
 
     /**
@@ -1989,11 +2149,21 @@ window.__ModuleLoader__.load({
         const onClick = (event) => {
           const target = event.target
           if (!(target instanceof Element)) return
-          const image = target instanceof HTMLImageElement
-            ? target
-            : target instanceof HTMLButtonElement
-              ? target.querySelector('img')
-              : null
+          // 草稿缩略图的外层不一定是 button（可能是 div / li），往上找几层拿 img。
+          let image = null
+          let node = target
+          for (let depth = 0; depth < 5 && node !== null && node !== undefined; depth += 1) {
+            if (node instanceof HTMLImageElement) {
+              image = node
+              break
+            }
+            const nested = typeof node.querySelector === 'function' ? node.querySelector('img') : null
+            if (nested instanceof HTMLImageElement) {
+              image = nested
+              break
+            }
+            node = node.parentElement
+          }
           if (image === null) return
           const ids = Array.isArray(attachmentIdsRef.current) ? attachmentIdsRef.current : []
           const urls = draftImageUrls(ids)
