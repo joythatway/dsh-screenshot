@@ -577,7 +577,7 @@ test('单张截图点开预览：近黑背景、顶部缩放 + 保存', async ()
   const back = render(React, gallery.component, {})
   assert.match(texts(back).join('\n'), /100%/u, '缩小回 100%')
 
-  // 滚轮缩放：往上放大、往下缩小，和豆包一致。
+  // 滚轮缩放：往上放大、往下缩小。
   const wheelHost = find(back, (element) => element.props !== undefined && typeof element.props.onWheel === 'function')
   assert.ok(wheelHost !== null, '预览层应该接滚轮事件')
   wheelHost.props.onWheel({ deltaY: -100, deltaMode: 0, target: null })

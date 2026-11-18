@@ -313,7 +313,7 @@ export function createMacosBackend() {
   }
 
   /**
-   * 截图前把宿主窗口藏起来，让用户能框选它后面的内容（豆包的行为）。
+   * 截图前把宿主窗口藏起来，让用户能框选它后面的内容（截图工具的常见做法）。
    * 藏不起来（没有辅助功能权限 / 不是桌面 App）就安静地继续，照常截图。
    * @returns {Promise<{hidden:boolean,reason?:string}>}
    */

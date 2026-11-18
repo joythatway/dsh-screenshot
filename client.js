@@ -384,7 +384,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** 图片预览：暗色背景 + 顶部「缩小 / 百分比 / 放大 / 保存」，和豆包的预览一致。 */
+    /** 图片预览：暗色背景 + 顶部「缩小 / 百分比 / 放大 / 保存」工具栏。 */
     function GalleryHost() {
       const [state, setState] = useState(gallery)
       const [busy, setBusy] = useState(false)
@@ -688,7 +688,7 @@ window.__ModuleLoader__.load({
     }
 
     const GALLERY_CSS = `
-      /* 和豆包一致的看图界面：整屏近黑遮罩，图片浮在中间，工具在顶部。 */
+      /* 看图界面：整屏近黑遮罩，图片浮在中间，工具栏在顶部。 */
       .sp-shot-gallery {
         position: fixed;
         inset: 0;
