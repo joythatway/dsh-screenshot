@@ -1889,6 +1889,29 @@ window.__ModuleLoader__.load({
         return []
       }
     }
+    /**
+     * 判断一次点击是不是真的落在草稿缩略图上。
+     * @param {unknown} node 指针下（或键盘激活时目标）最上层的元素。
+     * @param {readonly string[]} urls 草稿图片的预览地址。
+     * @param {number} [x] 指针横坐标；缺省表示这次点击没有坐标。
+     * @param {number} [y] 指针纵坐标。
+     * @returns {HTMLImageElement|null} 命中的缩略图；点在图片旁边的空白处返回 null。
+     */
+    function draftThumbnailAt(node, urls, x, y) {
+      if (!(node instanceof Element)) return null
+      if (node instanceof HTMLImageElement) return urls.includes(node.src) ? node : null
+      // 指针下不是图片本身时，只有落点确实在图片自己的矩形里才认。
+      // 缩略图所在的那一整行、包着输入框的外层卡片内部也都有这张图，
+      // 但它们是「祖先包含图片」，不等于「点在图片上」。
+      if (!Number.isFinite(x) || !Number.isFinite(y) || typeof node.querySelectorAll !== 'function') return null
+      for (const nested of node.querySelectorAll('img')) {
+        if (!(nested instanceof HTMLImageElement) || !urls.includes(nested.src)) continue
+        if (typeof nested.getBoundingClientRect !== 'function') continue
+        const rect = nested.getBoundingClientRect()
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return nested
+      }
+      return null
+    }
     // 当前平台能干什么：/probe 回来之前先乐观地假设三种都能用。
     let capabilities = { supported: true, modes: ALL_MODES }
     const capabilityListeners = new Set()
@@ -2242,8 +2265,9 @@ window.__ModuleLoader__.load({
       }, [])
 
       // 点草稿缩略图打开自己的预览（单张截图也接管，内置 ImageLightbox 没有保存按钮）。
-      // 关键：只认「指针下面真的压着这张图」。早先版本向上找 img，结果点输入框、
-      // 点预览里的按钮、点缩略图上的删除叉都会命中祖先里的图，把点击吞掉。
+      // 关键：只认「指针下面真的压着这张图」。早先版本顺着祖先 DOM 找 img，
+      // 于是点缩略图所在那一行的空白处、点包着输入框的外层卡片都会命中里面那张截图，
+      // 把普通点击变成打开预览；现在要么命中的元素就是图片，要么落点确实在图片矩形里。
       useEffect(() => {
         const onClick = (event) => {
           const target = event.target
@@ -2265,22 +2289,17 @@ window.__ModuleLoader__.load({
             && typeof document.elementFromPoint === 'function'
           let image = null
           if (hasPoint) {
-            // 只取指针处最上层的元素：缩略图上的删除叉在它上面，因此不会误判。
+            // 只取指针处最上层的元素：缩略图上的删除叉压在它上面，因此不会误判。
             const hit = document.elementFromPoint(x, y)
             // 指针下是预览 / 确认框自己的内容，一律不接管。
             if (hit instanceof Element && typeof hit.closest === 'function'
               && hit.closest('.sp-shot-gallery, .sp-shot-review') !== null) return
-            if (hit instanceof HTMLImageElement) image = hit
-            else if (hit instanceof Element) {
-              const nested = hit.querySelector('img')
-              if (nested instanceof HTMLImageElement) image = nested
-            }
+            image = draftThumbnailAt(hit, urls, x, y)
           } else {
-            // 键盘触发的 click 没有坐标，退回目标元素自身。
-            const candidate = target instanceof HTMLImageElement ? target : target.querySelector('img')
-            if (candidate instanceof HTMLImageElement) image = candidate
+            // 键盘激活没有坐标：只有目标元素自己就是这张缩略图才认。
+            image = draftThumbnailAt(target, urls)
           }
-          if (image === null || !urls.includes(image.src)) return
+          if (image === null) return
           event.preventDefault()
           event.stopPropagation()
           publishGallery({ urls, index: urls.indexOf(image.src) })
