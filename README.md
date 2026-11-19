@@ -1,10 +1,23 @@
 # 截图 · dsh-screenshot
 
-给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的输入框加一个截图按钮：**框选 / 窗口 / 整屏**。截图可以作为草稿附件随消息发送，也可以保存到磁盘。
+给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的输入框工具栏加一个截图按钮：**框选 / 窗口 / 整屏**。截图可以作为草稿附件随消息发送，也可以保存到磁盘。
 
-一个 Composer toolbar 插件，采集层调用系统原生截图能力；窗口列表、悬停缩略图、图片预览和设置页都沿用 Harness 的界面规范。
+A composer-toolbar screenshot plugin for DeepSeek Harness — one button, three modes, captures into the draft or straight to disk.
 
-> A composer-toolbar screenshot plugin for DeepSeek Harness: capture a region, a window, or the whole screen, then attach it to the draft or save it to disk.
+![输入框工具栏的截图入口](https://raw.githubusercontent.com/joythatway/dsh-screenshot/main/docs/01-entry.png)
+
+![图片预览：滚轮缩放、拖拽平移、保存](https://raw.githubusercontent.com/joythatway/dsh-screenshot/main/docs/02-preview.png)
+
+![设置页：快捷键、保存位置、框选时自动隐藏](https://raw.githubusercontent.com/joythatway/dsh-screenshot/main/docs/03-settings.png)
+
+## English
+
+A composer-toolbar screenshot plugin for DeepSeek Harness: capture a region, a window, or the whole screen, then attach it to the draft or save it to disk.
+
+- **One button, three modes** — region (the Harness window steps aside while you drag), a window list with live hover previews, or the whole screen.
+- **Draft or disk** — captures land in the composer as a draft attachment, or save them to a folder you pick (Desktop by default).
+- **Preview built in** — wheel zoom 25% – 400%, drag to pan, save straight from the preview.
+- **Settings page** — change the shortcut (⌃⇧S by default), the save folder, and whether the window hides during a region capture.
 
 ---
 
