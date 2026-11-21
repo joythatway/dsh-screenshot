@@ -1,196 +1,241 @@
-// Windows 采集后端：PowerShell + .NET（System.Drawing）+ Win32 枚举。
+// Windows 采集后端：常驻 PowerShell helper + Win32（PrintWindow / GDI）。
 //
-// ⚠️ 这一段没有在 Windows 机器上实测过（开发机是 macOS），逻辑与 macOS 后端对齐：
-// 列窗口 → 按窗口矩形从屏幕合成里截图；没有系统级框选遮罩，所以 region 模式不提供。
-// 真机跑不通时请把 `detail` 里的 PowerShell 报错贴出来。
+// 旧实现每次截图都 spawn 一个 powershell.exe 重新 Add-Type（约 1.2 s），
+// 抓完还要再起第二个进程缩放到 2560：整屏一次 3 s 左右，窗口列表 1.4 s。
+// 现在 helper 只启动一次，之后所有命令走 stdin/stdout 的 JSON 行，
+// 抓屏、缩放、PNG 编码都在同一次调用里完成；图片以 base64 直接回传，不落盘。
+//
+// 空闲 3 分钟会把 helper 关掉，不在后台常驻内存；下一次截图 / 悬停菜单时再拉起。
 
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { isOccluded, isUsableWindow } from '../lib/util.js'
+import { fileURLToPath } from 'node:url'
 
-const POWERSHELL = 'powershell.exe'
+/** helper 脚本位置；随包一起发布（package.json 的 files 里要带上）。 */
+const HELPER = fileURLToPath(new URL('./win/helper.ps1', import.meta.url))
+/** powershell.exe 的位置：优先用系统目录的绝对路径，PATH 被裁过时也能起来。 */
+const POWERSHELL = (() => {
+  const root = process.env.SystemRoot || process.env.windir
+  if (typeof root !== 'string' || root === '') return 'powershell.exe'
+  const full = join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  return existsSync(full) ? full : 'powershell.exe'
+})()
 const THUMB_EDGE = 480
 const THUMB_TTL_MS = 30_000
 const THUMB_MAX_ENTRIES = 16
-
-/** 枚举顶层窗口，输出 { windows: [...] }；顺序即 z 序（最前在前）。 */
-const LIST_SCRIPT = `param()
-$ErrorActionPreference = 'Stop'
-Add-Type @"
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
-public class WinInfo {
-  public long id { get; set; }
-  public int pid { get; set; }
-  public string title { get; set; }
-  public int x { get; set; }
-  public int y { get; set; }
-  public int w { get; set; }
-  public int h { get; set; }
-}
-public class WinEnum {
-  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr p);
-  delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
-  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
-  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
-  [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr hWnd);
-  [DllImport("user32.dll")] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
-  [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int index);
-  [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
-  [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
-  public static List<WinInfo> List() {
-    SetProcessDPIAware();
-    var items = new List<WinInfo>();
-    EnumWindows((h, l) => {
-      if (!IsWindowVisible(h) || IsIconic(h)) return true;
-      if ((GetWindowLong(h, -20) & 0x80) != 0) return true; // WS_EX_TOOLWINDOW
-      int len = GetWindowTextLength(h);
-      if (len <= 0) return true;
-      var sb = new StringBuilder(len + 1);
-      GetWindowText(h, sb, sb.Capacity);
-      RECT r;
-      if (!GetWindowRect(h, out r)) return true;
-      int w = r.Right - r.Left, hgt = r.Bottom - r.Top;
-      if (w < 100 || hgt < 80) return true;
-      uint pid;
-      GetWindowThreadProcessId(h, out pid);
-      items.Add(new WinInfo { id = (long)h, pid = (int)pid, title = sb.ToString(), x = r.Left, y = r.Top, w = w, h = hgt });
-      return true;
-    }, IntPtr.Zero);
-    return items;
-  }
-}
-"@
-$list = [WinEnum]::List()
-foreach ($item in $list) {
-  if (-not $item.title) { $item.title = '' }
-  $proc = Get-Process -Id $item.pid -ErrorAction SilentlyContinue
-  $item | Add-Member -NotePropertyName app -NotePropertyValue ($(if ($proc) { $proc.ProcessName } else { '' })) -Force
-}
-@{ windows = @($list) } | ConvertTo-Json -Compress -Depth 4
-`
+/** 首次启动要编译 C#（Add-Type），给宽松一点。 */
+const START_TIMEOUT_MS = 30_000
+const LIST_TIMEOUT_MS = 6_000
+const CAPTURE_TIMEOUT_MS = 15_000
+/** 框选 / 鼠标点选要等用户操作，超时只是兜底。 */
+const INTERACTIVE_TIMEOUT_MS = 180_000
+/** 空闲这么久没有请求就退出 helper，把内存还给系统。可用环境变量缩短，方便测试。 */
+const IDLE_SHUTDOWN_MS = Number(process.env.DSH_SCREENSHOT_IDLE_MS) || 3 * 60 * 1000
+/** 交给模型的长边上限，和 index.js 的 MAX_IMAGE_EDGE 一致。 */
+const DEFAULT_MAX_EDGE = 2560
 
 /**
- * 抓一块屏幕区域；宽高传 0 表示整个虚拟桌面。
- * 参数：-Out <png> -X -Y -W -H
+ * 把异常压成一行给 detail 用。
+ * @param {unknown} error
+ * @returns {string}
  */
-const CAPTURE_SCRIPT = `param([string]$Out, [int]$X, [int]$Y, [int]$W, [int]$H)
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class DpiAware { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
-"@
-[void][DpiAware]::SetProcessDPIAware()
-if ($W -le 0 -or $H -le 0) {
-  $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
-  $X = $b.X; $Y = $b.Y; $W = $b.Width; $H = $b.Height
+function describe(error) {
+  if (error instanceof Error) return error.message.slice(0, 300)
+  return String(error).slice(0, 300)
 }
-$bmp = New-Object System.Drawing.Bitmap $W, $H
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-try {
-  $g.CopyFromScreen($X, $Y, 0, 0, $bmp.Size)
-  $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
-} finally {
-  $g.Dispose(); $bmp.Dispose()
-}
-`
-
-/** 把图片等比缩到长边不超过 -Max；参数：-In -Out -Max */
-const RESIZE_SCRIPT = `param([string]$In, [string]$Out, [int]$Max)
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Drawing
-$img = [System.Drawing.Image]::FromFile($In)
-try {
-  $longest = [Math]::Max($img.Width, $img.Height)
-  if ($longest -le $Max) { Copy-Item $In $Out -Force; return }
-  $scale = $Max / $longest
-  $w = [int][Math]::Round($img.Width * $scale)
-  $h = [int][Math]::Round($img.Height * $scale)
-  $bmp = New-Object System.Drawing.Bitmap $w, $h
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  try {
-    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g.DrawImage($img, 0, 0, $w, $h)
-    $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
-  } finally {
-    $g.Dispose(); $bmp.Dispose()
-  }
-} finally {
-  $img.Dispose()
-}
-`
 
 /**
- * 把脚本写到临时目录并执行，返回 { code, stdout, stderr }。
- * @param {string} script PowerShell 脚本内容。
- * @param {string[]} args 追加到 -File 之后的参数。
- * @param {number} timeoutMs 超时毫秒数。
- * @returns {Promise<{code:number,stdout:string,stderr:string}>}
+ * 常驻 helper 的进程管理：懒启动、请求排队、超时、崩溃重启和空闲退出。
+ * @returns {object} helper 客户端。
  */
-async function runPowerShell(script, args = [], timeoutMs = 20000) {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-screenshot-ps-')).catch(() => undefined)
-  if (dir === undefined) return { code: -1, stdout: '', stderr: 'temp_dir_failed' }
-  const cleanup = () => {
-    rm(dir, { recursive: true, force: true }).catch(() => {})
-  }
-  const scriptPath = join(dir, 'task.ps1')
-  const written = await writeFile(scriptPath, script, 'utf8').then(() => true, () => false)
-  if (!written) {
-    cleanup()
-    return { code: -1, stdout: '', stderr: 'script_write_failed' }
-  }
+function createHelper() {
+  let child
+  let starting
+  let idleTimer
+  let seq = 0
+  let buffer = ''
+  let stderr = ''
+  const pending = new Map()
 
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = (result) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      cleanup()
-      resolve(result)
+  function clearIdle() {
+    if (idleTimer !== undefined) {
+      clearTimeout(idleTimer)
+      idleTimer = undefined
     }
-    let child
+  }
+
+  /** 手上没有请求时开始计时；有请求时绝不退出，避免把框选遮罩杀掉。 */
+  function scheduleIdle() {
+    clearIdle()
+    if (child === undefined || pending.size > 0) return
+    idleTimer = setTimeout(() => {
+      idleTimer = undefined
+      stop()
+    }, IDLE_SHUTDOWN_MS)
+    idleTimer.unref?.()
+  }
+
+  /** 进程没了：把所有等在队列里的请求一次性失败掉，避免页面一直转圈。 */
+  function failPending(reason) {
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer)
+      entry.reject(new Error(reason))
+    }
+    pending.clear()
+  }
+
+  function stop() {
+    clearIdle()
+    const current = child
+    child = undefined
+    failPending(new Error('helper_stopped'))
+    if (current !== undefined) {
+      try {
+        current.stdin.end()
+      } catch {}
+      current.kill()
+    }
+  }
+
+  /** 按行切 helper 的 stdout；一行就是一个 JSON 响应。 */
+  function onStdout(chunk) {
+    buffer += chunk
+    let index = buffer.indexOf('\n')
+    while (index >= 0) {
+      const line = buffer.slice(0, index).trim()
+      buffer = buffer.slice(index + 1)
+      if (line !== '') {
+        let message
+        try {
+          message = JSON.parse(line)
+        } catch {
+          message = undefined
+        }
+        if (message !== undefined) {
+          const entry = pending.get(message.id)
+          if (entry !== undefined) {
+            pending.delete(message.id)
+            clearTimeout(entry.timer)
+            entry.resolve(message)
+            if (pending.size === 0) scheduleIdle()
+          }
+        }
+      }
+      index = buffer.indexOf('\n')
+    }
+  }
+
+  function start() {
+    const proc = spawn(POWERSHELL, [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-STA',
+      '-File',
+      HELPER,
+    ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    child = proc
+    proc.stdout.setEncoding('utf8')
+    proc.stderr.setEncoding('utf8')
+    proc.stdout.on('data', onStdout)
+    proc.stderr.on('data', (chunk) => {
+      stderr = (stderr + chunk).slice(-8192)
+    })
+    proc.stdin.on('error', () => {})
+    proc.on('error', () => {
+      if (child === proc) {
+        child = undefined
+        clearIdle()
+        failPending(new Error('helper_spawn_failed'))
+      }
+    })
+    proc.on('exit', () => {
+      if (child === proc) {
+        child = undefined
+        clearIdle()
+        failPending(new Error('helper_exited'))
+      }
+    })
+  }
+
+  /**
+   * 发一个请求；调用前必须先 await ensure()。
+   * @param {string} op 操作名。
+   * @param {object} args 参数。
+   * @param {number} timeoutMs 超时。
+   * @returns {Promise<object>} helper 的响应。
+   */
+  function request(op, args, timeoutMs) {
+    const current = child
+    if (current === undefined) return Promise.reject(new Error('helper_not_started'))
+    const id = ++seq
+    clearIdle()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id)
+        reject(new Error('helper_timeout'))
+        if (pending.size === 0) scheduleIdle()
+      }, timeoutMs)
+      timer.unref?.()
+      pending.set(id, { resolve, reject, timer })
+      try {
+        current.stdin.write(`${JSON.stringify({ id, op, ...args })}\n`)
+      } catch {
+        clearTimeout(timer)
+        pending.delete(id)
+        reject(new Error('helper_write_failed'))
+      }
+    })
+  }
+
+  /** 确保 helper 已经起来；并发调用共用同一次启动。 */
+  async function ensure() {
+    if (child !== undefined) return
+    if (starting !== undefined) return starting
+    starting = (async () => {
+      start()
+      const pong = await request('ping', {}, START_TIMEOUT_MS)
+      if (pong === null || pong.ok !== true) throw new Error('helper_ping_failed')
+    })()
     try {
-      child = spawn(POWERSHELL, [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        scriptPath,
-        ...args,
-      ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
-    } catch {
-      finish({ code: -1, stdout: '', stderr: 'spawn_failed' })
-      return
+      await starting
+    } catch (error) {
+      const current = child
+      child = undefined
+      if (current !== undefined) current.kill()
+      throw error
+    } finally {
+      starting = undefined
     }
-    let stdout = ''
-    let stderr = ''
-    const timer = setTimeout(() => {
-      child.kill()
-      finish({ code: -1, stdout, stderr: `${stderr}timeout` })
-    }, timeoutMs)
-    timer.unref?.()
-    child.stdout?.setEncoding('utf8')
-    child.stderr?.setEncoding('utf8')
-    child.stdout?.on('data', (chunk) => {
-      stdout = (stdout + chunk).slice(-262144)
-    })
-    child.stderr?.on('data', (chunk) => {
-      stderr = (stderr + chunk).slice(-16384)
-    })
-    child.on('error', () => finish({ code: -1, stdout, stderr: 'spawn_failed' }))
-    child.on('close', (code) => finish({ code: code === null ? -1 : code, stdout, stderr }))
-  })
+  }
+
+  /**
+   * 真正发请求：先保证进程在，再把 helper 的错误翻成异常。
+   * @param {string} op 操作名。
+   * @param {object} args 参数。
+   * @param {number} timeoutMs 超时。
+   * @returns {Promise<object>} 响应。
+   */
+  async function call(op, args, timeoutMs) {
+    await ensure()
+    return request(op, args, timeoutMs)
+  }
+
+  return {
+    ensure,
+    call,
+    /** 预热：把 Add-Type 的一次性成本挪到后台。 */
+    warmup() {
+      ensure().catch(() => {})
+    },
+    /** 把 helper 里的 stderr 尾巴带进错误信息，方便用户贴失败原因。 */
+    lastError() {
+      return stderr.trim().slice(-400)
+    },
+    dispose: stop,
+  }
 }
 
 /**
@@ -198,72 +243,72 @@ async function runPowerShell(script, args = [], timeoutMs = 20000) {
  * @returns {object} 与 macOS 后端同形的接口。
  */
 export function createWindowsBackend() {
+  const helper = createHelper()
   const thumbnails = new Map()
 
-  async function captureRect(x, y, w, h) {
-    const dir = await mkdtemp(join(tmpdir(), 'dsh-screenshot-win-')).catch(() => undefined)
-    if (dir === undefined) return { ok: false, error: 'capture_failed' }
-    const out = join(dir, 'shot.png')
+  /**
+   * 跑一次采集：helper 直接在内存里编码 PNG 并以 base64 回传，这里解码成 Buffer。
+   * 不写临时文件，也就不会给用户磁盘留垃圾。
+   * @param {string} op helper 操作名。
+   * @param {object} args 参数。
+   * @param {number} timeoutMs 超时。
+   * @returns {Promise<{ok:boolean,buffer?:Buffer,error?:string,detail?:string}>}
+   */
+  async function grab(op, args, timeoutMs) {
     try {
-      const result = await runPowerShell(CAPTURE_SCRIPT, ['-Out', out, '-X', String(x), '-Y', String(y), '-W', String(w), '-H', String(h)])
-      if (result.code !== 0) {
-        return { ok: false, error: 'capture_failed', detail: result.stderr.trim().slice(0, 400) }
+      const result = await helper.call(op, args, timeoutMs)
+      if (result.ok !== true) {
+        return {
+          ok: false,
+          error: typeof result.error === 'string' ? result.error : 'capture_failed',
+          detail: typeof result.detail === 'string' ? result.detail : helper.lastError(),
+        }
       }
-      const buffer = await readFile(out).catch(() => undefined)
-      if (buffer === undefined || buffer.length === 0) return { ok: false, error: 'capture_failed' }
+      const buffer = Buffer.from(typeof result.data === 'string' ? result.data : '', 'base64')
+      if (buffer.length === 0) return { ok: false, error: 'capture_failed' }
       return { ok: true, buffer }
-    } finally {
-      rm(dir, { recursive: true, force: true }).catch(() => {})
+    } catch (error) {
+      return { ok: false, error: 'capture_failed', detail: [describe(error), helper.lastError()].filter(Boolean).join(' | ') }
     }
   }
 
   async function listWindows() {
-    const result = await runPowerShell(LIST_SCRIPT)
-    if (result.code !== 0) {
-      return { ok: false, error: 'list_failed', detail: result.stderr.trim().slice(0, 400) }
-    }
     try {
-      const parsed = JSON.parse(result.stdout.trim() || '{}')
-      const windows = Array.isArray(parsed.windows) ? parsed.windows : []
+      const result = await helper.call('list', {}, LIST_TIMEOUT_MS)
+      const raw = Array.isArray(result.windows) ? result.windows : (result.windows ? [result.windows] : [])
+      const windows = raw.map((entry) => ({
+        id: Number(entry.id),
+        pid: Number(entry.pid),
+        title: typeof entry.title === 'string' ? entry.title : '',
+        app: typeof entry.app === 'string' ? entry.app : '',
+        x: Number(entry.x) || 0,
+        y: Number(entry.y) || 0,
+        w: Number(entry.w) || 0,
+        h: Number(entry.h) || 0,
+      }))
       return { ok: true, windows }
-    } catch {
-      return { ok: false, error: 'list_failed' }
+    } catch (error) {
+      // helper 的 stderr 尾巴对排查很有用（比如 Add-Type 编译失败），一起带上。
+      return { ok: false, error: 'list_failed', detail: [describe(error), helper.lastError()].filter(Boolean).join(' | ') }
     }
   }
 
-  async function captureWindow(windowId) {
-    const listed = await listWindows()
-    if (!listed.ok) return { ok: false, error: listed.error || 'list_failed' }
-    const index = listed.windows.findIndex((entry) => Number(entry.id) === windowId)
-    const target = index === -1 ? undefined : listed.windows[index]
-    if (target === undefined || !isUsableWindow(target)) return { ok: false, error: 'hidden' }
-    // CopyFromScreen 抓到的是屏幕上真实叠放的内容，被挡住的窗口截出来是别人。
-    if (isOccluded(listed.windows, index)) return { ok: false, error: 'hidden' }
-    return captureRect(target.x, target.y, target.w, target.h)
-  }
-
-  async function optimize(buffer, maxEdge) {
-    const dir = await mkdtemp(join(tmpdir(), 'dsh-screenshot-shrink-')).catch(() => undefined)
-    if (dir === undefined) return buffer
-    const source = join(dir, 'shot.png')
-    const out = join(dir, 'shot-small.png')
-    try {
-      await writeFile(source, buffer)
-      const result = await runPowerShell(RESIZE_SCRIPT, ['-In', source, '-Out', out, '-Max', String(maxEdge)])
-      if (result.code !== 0) return buffer
-      const small = await readFile(out).catch(() => undefined)
-      if (small === undefined || small.length === 0) return buffer
-      return small.length < buffer.length ? small : buffer
-    } finally {
-      rm(dir, { recursive: true, force: true }).catch(() => {})
-    }
+  /**
+   * 宿主主窗口可能所属的进程：桌面版里宿主跑在 Electron 主进程的子进程里，
+   * 父进程才是拥有窗口的那个；万一改成主进程内运行，就轮到自己。
+   * 普通 node 环境返回空数组（不隐藏）。
+   * @returns {number[]} 候选 pid，优先父进程。
+   */
+  function shellPids() {
+    if (process.versions.electron === undefined) return []
+    const pids = [process.ppid, process.pid].filter((pid) => Number.isInteger(pid) && pid > 0)
+    return [...new Set(pids)]
   }
 
   return {
     id: 'windows',
     available: true,
-    // 没有系统级框选遮罩，region 不提供；调用时会返回 unsupported。
-    modes: ['window', 'screen'],
+    modes: ['region', 'window', 'screen'],
 
     async preflightPermission() {
       // Windows 桌面程序没有 macOS 那样的按应用屏幕录制授权，无需预检。
@@ -273,9 +318,22 @@ export function createWindowsBackend() {
     listWindows,
 
     async capture(mode, options = {}) {
-      if (mode === 'screen') return captureRect(0, 0, 0, 0)
-      if (mode === 'window' && options.windowId !== undefined) {
-        return captureWindow(options.windowId)
+      const maxEdge = Number.isFinite(options.maxEdge) ? options.maxEdge : DEFAULT_MAX_EDGE
+      const hideShell = options.hideShell === true
+      if (mode === 'screen') {
+        return grab('screen', { maxEdge }, CAPTURE_TIMEOUT_MS)
+      }
+      if (mode === 'window') {
+        if (options.windowId !== undefined) {
+          return grab('window', { hwnd: options.windowId, maxEdge }, CAPTURE_TIMEOUT_MS)
+        }
+        // 没有窗口号 = 菜单里的「改用鼠标点选窗口」：进交互式点选遮罩。
+        // 点选不隐藏宿主窗口：遮罩本来就盖住整屏，选中后用 PrintWindow 截窗口内容，
+        // 隐藏宿主反而会让桌面窗口重新排布，多此一举。
+        return grab('pick', { maxEdge }, INTERACTIVE_TIMEOUT_MS)
+      }
+      if (mode === 'region') {
+        return grab('region', { maxEdge, hideShell, shellPids: shellPids() }, INTERACTIVE_TIMEOUT_MS)
       }
       return { ok: false, error: 'unsupported' }
     },
@@ -283,36 +341,25 @@ export function createWindowsBackend() {
     async thumbnail(windowId) {
       const cached = thumbnails.get(windowId)
       if (cached !== undefined && Date.now() - cached.at < THUMB_TTL_MS) return cached.buffer
-      const listed = await listWindows()
-      if (!listed.ok) return undefined
-      const index = listed.windows.findIndex((entry) => Number(entry.id) === windowId)
-      const target = index === -1 ? undefined : listed.windows[index]
-      if (target === undefined || isOccluded(listed.windows, index)) return undefined
-      const captured = await captureRect(target.x, target.y, target.w, target.h)
-      if (!captured.ok) return undefined
-      const dir = await mkdtemp(join(tmpdir(), 'dsh-screenshot-thumb-')).catch(() => undefined)
-      if (dir === undefined) return undefined
-      const raw = join(dir, 'window.png')
-      const small = join(dir, 'thumb.png')
-      try {
-        await writeFile(raw, captured.buffer)
-        const resized = await runPowerShell(RESIZE_SCRIPT, ['-In', raw, '-Out', small, '-Max', String(THUMB_EDGE)])
-        if (resized.code !== 0) return undefined
-        const buffer = await readFile(small).catch(() => undefined)
-        if (buffer === undefined || buffer.length === 0) return undefined
-        thumbnails.set(windowId, { buffer, at: Date.now() })
-        while (thumbnails.size > THUMB_MAX_ENTRIES) {
-          const oldest = thumbnails.keys().next().value
-          if (oldest === undefined) break
-          thumbnails.delete(oldest)
-        }
-        return buffer
-      } finally {
-        rm(dir, { recursive: true, force: true }).catch(() => {})
+      const result = await grab('thumb', { hwnd: windowId, edge: THUMB_EDGE }, CAPTURE_TIMEOUT_MS)
+      if (!result.ok) return undefined
+      thumbnails.set(windowId, { buffer: result.buffer, at: Date.now() })
+      while (thumbnails.size > THUMB_MAX_ENTRIES) {
+        const oldest = thumbnails.keys().next().value
+        if (oldest === undefined) break
+        thumbnails.delete(oldest)
       }
+      return result.buffer
     },
 
-    optimize,
+    /** helper 已经按长边缩过了，这里不用再处理。 */
+    async optimize(buffer) {
+      return buffer
+    },
+
+    warmup() {
+      helper.warmup()
+    },
 
     openSettings() {
       return false
@@ -320,6 +367,7 @@ export function createWindowsBackend() {
 
     dispose() {
       thumbnails.clear()
+      helper.dispose()
     },
   }
 }

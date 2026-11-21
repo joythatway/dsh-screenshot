@@ -1,6 +1,6 @@
 {
   "name": "@joythatway/dsh-screenshot",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Composer toolbar screenshot for DeepSeek Harness: region / window / whole screen, attached into the draft or saved to disk, with a settings page. · 输入框工具栏截图：框选、窗口、整屏，可入草稿或存到桌面，带设置页。",
   "type": "module",
   "exports": {
@@ -13,6 +13,7 @@
     "index.js",
     "client.js",
     "capture/*.js",
+    "capture/win/*.ps1",
     "lib/*.js",
     "cordis.patch.yml",
     "locale/*.json",

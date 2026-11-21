@@ -31,7 +31,8 @@ A composer-toolbar screenshot plugin for DeepSeek Harness: capture a region, a w
   - 松开鼠标后先弹确认框：Enter 确认入草稿、Esc 取消、点遮罩空白取消；确认框里也可以直接保存到磁盘（没有打开的会话时只有「保存 / 取消」）。
 - **窗口**：
   - 列出当前屏幕上所有可见窗口（前台在前），悬停时显示该窗口的实时缩略图，预览跟随当前行移动；小于 100×80 的辅助窗口会被过滤；
-  - 点一行截取整窗；对窗口快照读回纯色图的场景（例如部分 GPU 渲染窗口）会做空图检测（颜色跨度 + 标准差）：未被遮挡时按窗口矩形从屏幕合成中截取，被遮挡时提示先切到前台，不会返回黑图或纯色图。
+  - 点一行截取整窗；对窗口快照读回纯色图的场景（例如部分 GPU 渲染窗口）会做空图检测（颜色跨度 + 标准差）：未被遮挡时按窗口矩形从屏幕合成中截取，被遮挡时提示先切到前台，不会返回黑图或纯色图；
+  - 列表底部还有「改用鼠标点选窗口」：直接在屏幕上点某个窗口即可，**左键截图、右键 / Esc 取消**（也是列表没能列出目标窗口时的兜底）。
 - **整屏**：直接截取整个桌面，无遮罩。
 - **保存到磁盘**：
   - 框选确认框里有「保存」，图片预览里也有「保存」；
@@ -58,16 +59,26 @@ A composer-toolbar screenshot plugin for DeepSeek Harness: capture a region, a w
 
 | 平台 | 框选 | 窗口（列表） | 整屏 | 状态 |
 |---|---|---|---|---|
-| macOS | 原生遮罩 | CoreGraphics + 悬停缩略图 | 原生截图 | **已实测** |
-| Windows | — | Win32 枚举 + 矩形截图 | .NET 截全屏 | 代码已写，**未实测** |
+| macOS | 系统原生遮罩 | CoreGraphics + 悬停缩略图 | 原生截图 | **已实测** |
+| Windows | 自绘遮罩（常驻 helper） | Win32 枚举 + PrintWindow | 常驻 helper + GDI | **已实测**（Windows 11） |
 | Linux | — | — | — | 不支持（按钮隐藏） |
 
-Windows 没有系统级的框选遮罩，因此不提供「框选截图」，菜单只会出现「窗口 / 整屏」两项。`/probe` 返回的 `modes` 字段会驱动界面自动隐藏不支持的模式。
+Windows 实现要点：
+
+- 采集层是一个**常驻 PowerShell helper**（`capture/win/helper.ps1`）：`Add-Type` 只编译一次，之后所有截图命令走 stdin/stdout 的 JSON 行。整屏约 0.35 s、窗口约 0.3 s、窗口列表约 0.02 s（4K / 200% 缩放实测）。
+- **不落盘**：helper 在内存里把 PNG 编码成 base64 直接回传宿主，截图不写临时文件，不会在磁盘上留下垃圾；只有点「保存」才会写你选的目录。
+- **轻量**：helper 空闲 3 分钟自动退出，不在后台常驻；鼠标悬停截图按钮或打开菜单时会提前预热，下一次截图基本感觉不到启动。
+- **框选**用 helper 里的 WinForms 遮罩：先抓一张全屏底图，再铺一层压暗的遮罩，拖拽出的区域显示原图；松手即裁切。**右键 / Esc 直接取消**。截屏前会隐藏 Harness 窗口（设置里可关），结束后恢复。
+- **鼠标点选窗口**（窗口列表底部的「改用鼠标点选窗口」）：铺一层遮罩，鼠标移到哪个窗口就高亮哪个，左键截图、右键 / Esc 取消。点选时不隐藏 Harness 窗口——遮罩本来就盖住整屏，选中后按窗口内容截图，隐藏反而会让桌面窗口重新排布。
+- **窗口截图**用 `PrintWindow(PW_RENDERFULLCONTENT)`，窗口被挡住也能截到内容；Win10/11 的不可见缩放边框会按 DWM 的可见框架裁掉，截图没有白边。个别 GPU 渲染窗口返回空图时会回退到屏幕矩形截取。
+- **窗口列表**按「Alt-Tab 语义」过滤：跳过 DWM cloaked（其他虚拟桌面 / 被挂起的 UWP）、工具窗口、无激活窗口、被拥有的弹窗、shell 表面（任务栏、桌面、输入体验等）和屏幕外窗口。
+- **界面适配**：Windows 桌面的菜单宽度按内容撑开（`Ctrl+Shift+S` 不会再把「整屏截图」挤成两行）；预览层整层标成 `no-drag` 并把顶部工具栏 / 关闭键下移到标题栏下方，避免落在窗口拖动区里点不动、或压到右上角的系统按钮。这些只对 Windows 桌面版生效，浏览器和 macOS 保持原样。
 
 ## 环境要求
 
 - DeepSeek Harness（桌面版；浏览器中按钮可用，但快捷键只在桌面端绑定）
 - macOS 12+（采集层使用 `screencapture`、`sips`、JXA/CoreGraphics）
+- Windows 10 1809+ / Windows 11（采集层使用 `powershell.exe` + .NET Framework 4.8，系统自带，无需额外安装）
 - Node.js ≥ 20（仅开发与测试需要）
 
 ## 安装
@@ -101,6 +112,8 @@ plugin_manager install_bundle /绝对路径/dsh-screenshot
 
 插件使用 `CGPreflightScreenCaptureAccess()` 预检屏幕录制权限：只查询权限，不读取任何像素。
 
+以上两项都是 macOS 的权限。Windows 没有对应的按应用授权：截图、框选遮罩、隐藏宿主窗口都不需要额外许可，装上就能用。
+
 ## 隐私与存储
 
 - **截图默认不落盘**：PNG 只存在于宿主进程内存中，页面取走后即释放，60 秒未取自动清理；只有点击「保存」才会写入所选目录。
@@ -126,6 +139,7 @@ plugin_manager install_bundle /绝对路径/dsh-screenshot
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/dsh-screenshot/probe` | 平台能力：`supported` / `platform` / `modes` |
+| POST | `/api/dsh-screenshot/warm` | 预热采集后端（Windows 用来提前拉起 helper），永远返回 `{ ok: true }` |
 | GET | `/api/dsh-screenshot/windows` | 可见窗口列表（z 序，带坐标和尺寸） |
 | GET | `/api/dsh-screenshot/thumbnail?id=<窗口号>` | 480px 窗口缩略图（PNG） |
 | POST | `/api/dsh-screenshot/capture` | `{ mode: 'region'\|'window'\|'screen', windowId?, hideShell? }` → `{ ok, id }` |
@@ -142,14 +156,17 @@ plugin_manager install_bundle /绝对路径/dsh-screenshot
 index.js              Host 入口：HTTP 路由、内存暂存、保存与设置
 capture/index.js      按平台选择采集后端
 capture/macos.js      screencapture / sips / JXA（已实测）
-capture/windows.js    PowerShell + .NET（未实测）
+capture/windows.js    Windows 后端：常驻 helper 的进程管理与协议
+capture/win/helper.ps1  常驻 PowerShell helper：枚举 / 抓屏 / PrintWindow / 框选遮罩
 lib/util.js           采集工具函数（可单测）
 lib/settings.js       设置的默认值、校验与 JSON 持久化
 client.js             浏览器端：按钮、菜单、确认框、预览、缩略图、设置页
 test/util.test.js     采集工具函数单测
 test/settings.test.js 设置校验单测
+test/capture.test.js  采集后端接口契约 + 发布内容检查
 test/host.test.js     Host 路由集成测试（临时目录写盘）
 test/client.test.js   客户端冒烟测试（模块加载 / 槽位注册 / 页面渲染）
+dev/                  Windows 真机调试脚本（不进 npm 包）
 ```
 
 ## 开发
@@ -164,9 +181,11 @@ CI 配置在 `.github/workflows/test.yml`，push 时自动运行测试。
 
 - 依赖 Harness 的若干扩展点（`conversation.input.left` 槽位、`conversation` 服务的 `createDrafts` / `releaseDraftAttachment`、`shortcuts.register`）。升级 Harness 后建议把三种模式各点一次；异常通常是静默失效，不会导致界面崩溃。
 - 快捷键只声明桌面端（`desktop:*`）：浏览器中 Ctrl+Shift+S 不是允许的浏览器组合，因此网页版不绑定这条命令，但设置页仍可修改桌面端的绑定。
-- 「框选时自动隐藏窗口」目前在 macOS 生效；Windows 后端不隐藏宿主窗口。
-- 自动隐藏窗口依赖「辅助功能」权限；授权后如果窗口仍不隐藏，重启一次 Harness 再试。
-- Windows 实现未经真机验证，路径与 DPI 行为可能需要调整；失败时接口会通过 `detail` 返回 PowerShell 的原始报错。
+- 「框选时自动隐藏窗口」在 macOS 与 Windows 都生效；Windows 通过隐藏宿主主窗口实现（按宿主进程的 pid 找：先试父进程，再试自己），都找不到时就退化为不隐藏，不会隐藏错窗口。
+- Windows 的 helper 依赖系统自带的 Windows PowerShell 5.1 与 .NET Framework 4.8；启动脚本用 `-ExecutionPolicy Bypass`，不需要改系统执行策略，也不需要管理员权限。
+- Windows helper 空闲 3 分钟会退出（可用环境变量 `DSH_SCREENSHOT_IDLE_MS` 调整毫秒数）；退出后第一次截图会有约 1 s 的启动/编译时间，悬停按钮或打开菜单会提前预热。helper 崩溃后下一次截图会自动重启它。
+- 部分 GPU 渲染的窗口（某些浏览器、游戏、Electron 应用）`PrintWindow` 可能返回黑图，此时会回退到「按屏幕矩形截取」，被其他窗口挡住就会截到挡住的内容。
+- Windows 的框选 / 点选遮罩最多停留 5 分钟：到点自己收掉并恢复被隐藏的窗口，避免宿主卡住时把整块屏幕一直盖着。
 - 确认框和预览层没有焦点陷阱（鼠标可用；键盘支持 Enter/Esc 与预览的 ←/→）。
 - 设置页的保存目录只校验是否为绝对路径，是否可写要等第一次保存时才知道（失败会提示检查目录）。
 

@@ -2,6 +2,7 @@
 //
 // 交互式截图（框选 / 系统窗口点选）依赖 screencapture 的原生遮罩；
 // 窗口列表和按窗口号截图走 CoreGraphics；缩略图和压缩用 sips。
+// 系统遮罩在窗口点选里对右键也会截图，所以另起一段 JXA 盯右键，按到就杀掉遮罩并当取消。
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -81,6 +82,53 @@ function runCommand(binaryPath, args, timeoutMs = 6000) {
     child.on('error', () => finish(-1))
     child.on('close', (code) => finish(code === null ? -1 : code))
   })
+}
+
+/**
+ * 盯着鼠标右键：按下去就在 stdout 打一行 right 然后退出。
+ * 系统的窗口点选遮罩（screencapture -W）对右键也会截图，只有外面接管才能做到「右键取消」。
+ * 轮询 NSEvent.pressedMouseButtons 不需要额外权限；位 1（值 2）就是右键。
+ */
+const RIGHT_CLICK_WATCH_SCRIPT = `ObjC.import('AppKit');
+(function () {
+  var deadline = Date.now() + 1800000;
+  while (Date.now() < deadline) {
+    if (($.NSEvent.pressedMouseButtons & 2) !== 0) return 'right';
+    $.NSThread.sleepForTimeInterval(0.012);
+  }
+  return 'timeout';
+})();`
+
+/**
+ * 在系统遮罩打开期间盯着右键；按到时回调一次。
+ * 起不来 osascript 时返回一个空手柄，调用方退化成原生行为（右键仍然会截图）。
+ * @param {() => void} onPress 右键按下时调用。
+ * @returns {{stop: () => void}} 手柄，调用方负责在遮罩结束时停掉。
+ */
+function watchRightClick(onPress) {
+  let child
+  try {
+    child = spawn(OSASCRIPT, ['-l', 'JavaScript'], { stdio: ['pipe', 'pipe', 'ignore'] })
+  } catch {
+    return { stop() {} }
+  }
+  let stdout = ''
+  child.stdout?.setEncoding('utf8')
+  child.stdout?.on('data', (chunk) => {
+    stdout = (stdout + chunk).slice(-64)
+  })
+  child.on('error', () => {})
+  child.on('close', () => {
+    if (stdout.trim() === 'right') onPress()
+  })
+  child.stdin?.end(RIGHT_CLICK_WATCH_SCRIPT)
+  return {
+    stop() {
+      try {
+        child.kill('SIGKILL')
+      } catch {}
+    },
+  }
 }
 
 /** 把一段 JXA 交给 osascript 跑，返回解析后的 JSON；失败时 undefined。 */
@@ -213,9 +261,13 @@ export function createMacosBackend() {
           : ['-i', '-x', '-t', 'png', file]
         let stderr = ''
         let settled = false
+        /** 用户是按右键取消的：原生遮罩可能已经存了半张图，一律丢掉。 */
+        let rightClicked = false
+        let watcher
         const finish = (result) => {
           if (settled) return
           settled = true
+          watcher?.stop()
           rm(dir, { recursive: true, force: true }).catch(() => {})
           resolve(result)
         }
@@ -227,6 +279,14 @@ export function createMacosBackend() {
           return
         }
         captureChild = child
+        // 窗口点选：系统的 -W 遮罩对右键也会截图，所以自己盯着右键，按到就当取消。
+        if (mode === 'window') {
+          watcher = watchRightClick(() => {
+            if (settled) return
+            rightClicked = true
+            child.kill('SIGTERM')
+          })
+        }
         child.stderr?.setEncoding('utf8')
         child.stderr?.on('data', (chunk) => {
           stderr = (stderr + chunk).slice(-4096)
@@ -238,6 +298,11 @@ export function createMacosBackend() {
         child.on('close', (code, signal) => {
           captureChild = null
           const exit = String(signal === null ? code : signal)
+          // 右键取消：哪怕遮罩已经写出一张图，也不要把截图交给页面。
+          if (rightClicked) {
+            finish({ ok: false, error: 'cancelled', detail: 'right-click' })
+            return
+          }
           readFile(file)
             .then((buffer) => {
               if (buffer.length > 0) return finish({ ok: true, buffer })

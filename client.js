@@ -78,13 +78,14 @@ window.__ModuleLoader__.load({
       'settings.save.description': '点「保存」时把 PNG 存到这个文件夹',
       'settings.save.pick': '选择…',
       'settings.save.reset': '恢复默认',
-      'settings.save.notAbsolute': '请填绝对路径，例如 /Users/you/Pictures',
+      'settings.save.notAbsolute': '请填绝对路径，例如 {path}',
       'settings.save.failed': '保存目录没写进去，请重试',
       'settings.save.pickFailed': '当前环境打不开文件夹选择器，直接输入路径也可以',
       'settings.hide.title': '框选时自动隐藏窗口',
       'settings.hide.description': '框选期间把 Harness 窗口让开，截完自动恢复（需要「辅助功能」权限）',
+      'settings.hide.descriptionWindows': '框选期间把 Harness 窗口让开，截完自动恢复',
       'settings.hide.failed': '设置没写进去，请重试',
-      'settings.footer': '设置立即生效 · 保存在 ~/.dsh/dsh-screenshot/settings.json',
+      'settings.footer': '设置立即生效 · 保存在 {path}',
       'settings.loadFailed': '没能读到设置，改动可能不会保存',
       'save.done': '已保存到 {path}',
       'save.reveal': '显示',
@@ -149,13 +150,14 @@ window.__ModuleLoader__.load({
       'settings.save.description': 'The Save button writes PNG files into this folder',
       'settings.save.pick': 'Choose…',
       'settings.save.reset': 'Restore default',
-      'settings.save.notAbsolute': 'Use an absolute path, such as /Users/you/Pictures',
+      'settings.save.notAbsolute': 'Use an absolute path, such as {path}',
       'settings.save.failed': 'The save location was not written. Try again.',
       'settings.save.pickFailed': 'The folder picker is unavailable here; type the path instead',
       'settings.hide.title': 'Hide the window while selecting a region',
       'settings.hide.description': 'Steps the Harness window aside while you drag, then restores it (needs Accessibility permission)',
+      'settings.hide.descriptionWindows': 'Steps the Harness window aside while you drag, then restores it',
       'settings.hide.failed': 'The setting was not written. Try again.',
-      'settings.footer': 'Applies immediately · stored in ~/.dsh/dsh-screenshot/settings.json',
+      'settings.footer': 'Applies immediately · stored in {path}',
       'settings.loadFailed': 'Could not read the settings; changes may not be saved',
       'save.done': 'Saved to {path}',
       'save.reveal': 'Show',
@@ -563,7 +565,7 @@ window.__ModuleLoader__.load({
 
       return createPortal(h('div', {
         ref: rootRef,
-        className: 'sp-shot-gallery',
+        className: isWindowsDesktop() ? 'sp-shot-gallery sp-shot-gallery-win' : 'sp-shot-gallery',
         role: 'dialog',
         'aria-modal': 'true',
         onMouseDown: closeOnBackdrop,
@@ -838,6 +840,25 @@ window.__ModuleLoader__.load({
         right: 20px;
         font-size: 18px;
         line-height: 1;
+      }
+      /* Windows 桌面版的窗口按钮在右上角：关闭键往下让开，别被系统按钮盖住。
+         浏览器和 macOS 不受影响。 */
+      .sp-shot-gallery-win .sp-shot-gallery-close {
+        top: 56px;
+      }
+      /* Windows 桌面版顶栏（约 40px）是窗口拖动区，落在那里的鼠标事件会被
+         当成拖窗口，按钮第一下点不动。整层标成 no-drag，工具栏再整体下移。 */
+      .sp-shot-gallery-win {
+        -webkit-app-region: no-drag;
+      }
+      .sp-shot-gallery-win .sp-shot-gallery-topbar {
+        top: 56px;
+      }
+      .sp-shot-gallery-win .sp-shot-gallery-stage {
+        padding-top: 104px;
+      }
+      .sp-shot-gallery-win .sp-shot-gallery-image {
+        max-height: calc(100vh - 242px);
       }
       .sp-shot-gallery-strip {
         position: absolute;
@@ -1369,6 +1390,13 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState(null)
       const [shortcutError, setShortcutError] = useState(null)
 
+      // Windows 上隐藏宿主不需要「辅助功能」权限，路径写法也和 macOS 不同。
+      const windowsHost = settings.platform === 'win32' || (settings.platform === '' && isWindowsPlatform())
+      const pathExample = windowsHost ? 'C:\\Users\\you\\Pictures' : '/Users/you/Pictures'
+      const settingsFile = windowsHost
+        ? '%USERPROFILE%\\.dsh\\dsh-screenshot\\settings.json'
+        : '~/.dsh/dsh-screenshot/settings.json'
+
       useEffect(() => {
         const listener = () => setSettings(settingsState)
         settingsListeners.add(listener)
@@ -1538,7 +1566,7 @@ window.__ModuleLoader__.load({
           setError({
             scope: 'saveDir',
             text: result.error === 'not_absolute' || result.error === 'invalid'
-              ? t('settings.save.notAbsolute', ZH['settings.save.notAbsolute'])
+              ? t('settings.save.notAbsolute', ZH['settings.save.notAbsolute']).replace('{path}', pathExample)
               : t('settings.save.failed', ZH['settings.save.failed']),
           })
         }
@@ -1681,7 +1709,9 @@ window.__ModuleLoader__.load({
         h(SettingsRow, {
           key: 'hide',
           title: t('settings.hide.title', ZH['settings.hide.title']),
-          description: t('settings.hide.description', ZH['settings.hide.description']),
+          description: windowsHost
+            ? t('settings.hide.descriptionWindows', ZH['settings.hide.descriptionWindows'])
+            : t('settings.hide.description', ZH['settings.hide.description']),
           error: hideError,
         },
           h(SettingsSwitch, {
@@ -1695,7 +1725,7 @@ window.__ModuleLoader__.load({
         h('div', { key: 'foot', className: 'sp-set-foot' },
           settings.status === 'failed'
             ? t('settings.loadFailed', ZH['settings.loadFailed'])
-            : t('settings.footer', ZH['settings.footer'])),
+            : t('settings.footer', ZH['settings.footer']).replace('{path}', settingsFile)),
       )
     }
 
@@ -1855,6 +1885,35 @@ window.__ModuleLoader__.load({
       return /darwin|mac|iphone|ipad/iu.test(String(name || ''))
     }
 
+    /**
+     * 是否是 Windows（含浏览器）。
+     * 菜单宽度这类纯排版问题用它就够了，不依赖桌面壳。
+     */
+    function isWindowsPlatform() {
+      if (typeof document === 'undefined' || typeof navigator === 'undefined') return false
+      const dataset = document.documentElement.dataset.platform
+      const name = dataset !== undefined ? dataset : navigator.platform
+      return /win/iu.test(String(name || ''))
+    }
+
+    /**
+     * 是否是 Windows 桌面版 Harness。
+     * 只有桌面壳需要为系统窗口按钮让位置；浏览器里标题栏是浏览器自己的，不用改。
+     */
+    function isWindowsDesktop() {
+      if (typeof document === 'undefined' || typeof navigator === 'undefined') return false
+      return isWindowsPlatform() && /electron/iu.test(String(navigator.userAgent || ''))
+    }
+
+    /** 让 Host 提前把采集后端热起来；同一波交互只发一次。 */
+    let warmedAt = 0
+    function warmCapture() {
+      const now = Date.now()
+      if (now - warmedAt < 5000) return
+      warmedAt = now
+      fetch(API + '/warm', { method: 'POST' }).catch(() => {})
+    }
+
     function wait(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms))
     }
@@ -1943,6 +2002,8 @@ window.__ModuleLoader__.load({
       settings: { ...DEFAULT_PLUGIN_SETTINGS },
       saveDir: '',
       defaultSaveDir: '',
+      /** 'darwin' | 'win32' | ...，决定设置页里的路径示例和权限说明。 */
+      platform: '',
     }
     const settingsListeners = new Set()
     function publishSettings(patch) {
@@ -2082,6 +2143,7 @@ window.__ModuleLoader__.load({
         },
         saveDir: typeof payload.saveDir === 'string' ? payload.saveDir : '',
         defaultSaveDir: typeof payload.defaultSaveDir === 'string' ? payload.defaultSaveDir : '',
+        platform: typeof payload.platform === 'string' ? payload.platform : '',
       })
     }
 
@@ -2435,6 +2497,8 @@ window.__ModuleLoader__.load({
 
       const toggleMenu = (event) => {
         if (busy) return
+        // 点开菜单就先预热采集后端：用户还在选模式时 helper 已经在起了。
+        warmCapture()
         if (menu !== null) {
           setHoverWindow(null)
           setMenu(null)
@@ -2535,6 +2599,7 @@ window.__ModuleLoader__.load({
             : t('menu.hintKeys', ZH['menu.hintKeys']).replace('{keys}', shortcutKeysText()),
           'aria-label': t('menu.label', ZH['menu.label']),
           disabled: busy || !caps.supported,
+          onPointerEnter: warmCapture,
           onClick: toggleMenu,
         }, h(CameraIcon, { size: 16 })),
         ),
@@ -2543,7 +2608,14 @@ window.__ModuleLoader__.load({
           ref: popoverRef,
           className: 'sp-shot-pop',
           role: 'menu',
-          style: { left: menu.left, bottom: menu.bottom, width: menu.view === 'windows' ? 320 : 152 },
+          style: {
+            left: menu.left,
+            bottom: menu.bottom,
+            // Windows 的快捷键文案是 Ctrl+Shift+S，比 mac 的 ⌃⇧S 长，
+            // 固定 152px 会把「整屏截图」挤成两行；桌面上改成按内容撑开。
+            width: menu.view === 'windows' ? 320 : isWindowsPlatform() ? 'max-content' : 152,
+            ...(menu.view === 'menu' && isWindowsPlatform() ? { maxWidth: 300 } : {}),
+          },
           // 键盘走到菜单里：上下键换行，回车触发、Esc 关闭由行内按钮和菜单监听负责。
           onKeyDown: (event) => {
             if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return

@@ -204,3 +204,22 @@ test('跨站请求被挡在同源检查外', async () => {
     assert.equal(result.json.error, 'cross_site')
   })
 })
+
+test('POST /warm 总能应答，没有预热能力的后端也不会报错', async () => {
+  await withTempHome(async () => {
+    const ctx = createContext()
+    apply(ctx)
+    const result = await call(ctx, 'POST', '/api/dsh-screenshot/warm')
+    assert.equal(result.status, 200)
+    assert.equal(result.json.ok, true)
+  })
+})
+
+test('GET /settings 带上宿主平台，设置页据此换路径示例', async () => {
+  await withTempHome(async () => {
+    const ctx = createContext()
+    apply(ctx)
+    const result = await call(ctx, 'GET', '/api/dsh-screenshot/settings')
+    assert.equal(result.json.platform, process.platform)
+  })
+})

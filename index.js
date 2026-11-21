@@ -140,6 +140,17 @@ function revealInFileManager(path) {
  */
 export function apply(ctx) {
   const backend = createCaptureBackend()
+  /**
+   * 预热采集后端。Windows 后端首次启动 helper 要编译 C#（约 1 s），
+   * 让它在用户选模式的时候就起来，别等真正点截图。测试里不预热，免得留进程。
+   */
+  function warmBackend() {
+    if (process.env.NODE_TEST_CONTEXT !== undefined) return
+    backend.warmup?.()
+  }
+  // 晚一拍再预热：别和宿主自己的启动抢 CPU；悬停按钮 / 打开菜单时还会再叫一次。
+  const warmTimer = setTimeout(warmBackend, 1500)
+  warmTimer.unref?.()
   /** id -> { buffer, timer } —— 已经截好、等页面来取图的暂存区。 */
   const shots = new Map()
   /** 同一时刻只允许一个交互式截图，避免两个遮罩打架。 */
@@ -196,7 +207,7 @@ export function apply(ctx) {
         send(res, 200, { ok: false, error: 'permission', detail: 'screen recording permission is not granted' })
         return
       }
-      const result = await backend.capture(mode, { windowId, hideShell })
+      const result = await backend.capture(mode, { windowId, hideShell, maxEdge: MAX_IMAGE_EDGE })
       if (!result.ok) {
         send(res, 200, { ok: false, error: result.error, detail: result.detail || '' })
         return
@@ -310,6 +321,13 @@ export function apply(ctx) {
         return
       }
 
+      // 预热：页面在悬停 / 打开菜单时先叫一声，Windows 后端就趁这点时间把 helper 拉起来。
+      if (method === 'POST' && route === '/warm') {
+        warmBackend()
+        send(res, 200, { ok: true })
+        return
+      }
+
       if (method === 'GET' && route === '/windows') {
         const listed = await backend.listWindows()
         send(res, 200, listed.ok
@@ -406,6 +424,7 @@ export function apply(ctx) {
 
   // 插件卸载时收尾：停掉采集后端，清掉内存里的图。
   ctx.effect(() => () => {
+    clearTimeout(warmTimer)
     backend.dispose()
     for (const id of [...shots.keys()]) dropShot(id)
     capturing = false
